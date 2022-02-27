@@ -1,0 +1,243 @@
+###########################################################################################################
+
+config-lcwa-speed-sysprep.sh --help
+
+config-lcwa-speed-sysprep.sh: Installs system and python library dependencies for the lcwa-speed service.
+
+Syntax: config-lcwa-speed-sysprep.sh 
+
+            Optional parameters:
+		-h|--help	# Displays this help
+		-d|--debug	# Shows debugging info.
+		-q|--quiet	# Supresses message output.
+		-f|--force	# Inhibit rpi checks
+		-t|--test	# Tests script logic without performing
+				actions.
+		-u|--uninstall|--remove	# Removes the 'admin' account. Doesn't
+				uninstall basic utilities.
+
+###########################################################################################################
+
+config-lcwa-speed-inst.sh --help
+
+config-lcwa-speed-inst.sh: Installs system and python library dependencies for the lcwa-speed service.
+
+Syntax: config-lcwa-speed-inst.sh 
+
+            Optional parameters:
+		-h|--help	# Displays this help
+		-d|--debug	# Shows debugging info.
+		-q|--quiet	# Supresses message output.
+		-f|--force	# Force overwriting of an existing
+				env file.
+		-t|--test	# Tests script logic without performing
+				actions.
+		-k|--keep	# Retains local pip3 http cache and the
+				speedfile data
+		--uninstall|--remove	# Deletes all service directories,
+				config files and the service user account.
+		-c|--clean	# Cleans and deletes previous install
+				before reinstalling.
+		--inst-name	# =NAME -- Instance name that defines the
+				install location: /usr/local/share/NAME
+				and user account name -- defaults to
+				lcwa-speed.
+		--service-name	# =NAME -- Defines the name of the
+				service: /lib/systemd/system/NAME.service
+				-- defaults to lcwa-speed.
+		--env-file	# =NAME -- Read a specific env file to
+				get the locations for the install.
+ 
+###########################################################################################################
+
+config-lcwa-speed-deps.sh --help
+
+config-lcwa-speed-deps.sh: Installs system and python library dependencies for the lcwa-speed service.
+
+Syntax: config-lcwa-speed-deps.sh 
+
+            Optional parameters:
+		-h|--help	# Displays this help
+		-d|--debug	# Shows debugging info.
+		-q|--quiet	# Supresses message output.
+		-f|--force	# Forces reinstall of jq commandline
+				JSON processor
+		-t|--test	# Tests script logic without performing
+				actions.
+		-k|--keep-cache	# Retains local pip3 http cache.
+		-c|--clean	# Cleans and deletes previous install
+				before reinstalling.
+		--inst-name	# =NAME -- Instance name that defines the
+				install location: /usr/local/share/NAME
+				and user account name -- defaults to
+				lcwa-speed.
+		--service-name	# =NAME -- Defines the name of the
+				service: /lib/systemd/system/NAME.service
+				-- defaults to lcwa-speed.
+		--env-file	# =NAME -- Read a specific env file to
+				get the locations for the install.
+ 
+###########################################################################################################
+
+config-ookla-speedtest.sh --help
+
+config-ookla-speedtest.sh: Ookla speedtest install script
+
+Syntax: config-ookla-speedtest.sh [optional_license_username or license_file_path]
+
+            Optional parameters:
+		-h|--help	# Display this help
+		-d|--debug	# Emit debugging info
+		-q|--quiet	# Supress messages
+		-t|--test	# Test logic, but perform no actions.
+		-f|--force	# Force reinstall of speedtest
+		-n|--no-pause	# Supress prompt and pause
+		-u|--update	# Install or update any existing Ookla speedtest install
+		-r|--remove	# Remove Ookla speedtest install
+		-i|--install	# Remove any existing Ookla install and then reinstall
+		-k|--direct	# Install from downloaded tar.gz rather than via apt-get.
+		--license-only
+		--env-file		# =NAME -- Read a specific env file to get the locations for the install.
+ 
+###########################################################################################################
+
+config-lcwa-speed-repos.sh --help
+
+config-lcwa-speed-repos.sh: Installs local repo clones for the lcwa-speed service.
+
+Syntax: config-lcwa-speed-repos.sh 
+
+            Optional parameters:
+		-h|--help	# Displays this help
+		-d|--debug	# Shows debugging info.
+		-q|--quiet	# Supresses message output.
+		-t|--test	# Tests script logic without performing
+				actions.
+		-c|--clean	# Cleans and deletes previous repo
+				installs before reinstalling.
+		-r|--remove|--uninstall	# Removes local clones of the repos
+		-u|--update	# Performs a hard reset and update of
+				the repos
+		--shallow	# Performs a shallow clone of only the
+				latest commit.
+		--branch
+		--sup-branch
+		--inst-name	# =NAME -- Instance name that defines the
+				install location: /usr/local/share/NAME
+				and user account name -- defaults to
+				lcwa-speed.
+		--service-name	# =NAME -- Defines the name of the
+				service: /lib/systemd/system/NAME.service
+				-- defaults to lcwa-speed.
+		--env-file	# =NAME -- Read a specific env file to
+				get the locations for the install.
+ 
+###########################################################################################################
+
+config-lcwa-speed-jsonconf.sh --help
+
+config-lcwa-speed-jsonconf.sh: Creates the config.json file for the lcwa-speed service.
+
+Syntax: config-lcwa-speed-jsonconf.sh [ env-file ]
+
+            Optional parameters:
+		-h|--help	# Display help
+		-d|--debug	# Shows debugging info.
+		-q|--quiet	# Supresses message output.
+		-v|--verbose	# Display additional message output.
+		-f|--force	# Forces reinstall of jq commandline
+				JSON processor
+		-t|--test	# Test mode -- -tt will create json
+				in ${SCRIPT_DIR}
+		--source-json	# =path & filename of
+				souce json. Defaults to
+				/usr/local/share/lcwa-speed/speedtest/config/test_speed_cfg.json
+		--target-json	# =path & filename of our
+				config.json.  Defaults to
+				/etc/lcwa-speed/lcwa-speed.json
+		--inst-name	# =NAME -- Instance name that defines the
+				install location: /usr/local/share/NAME
+				and user account name -- defaults to
+				lcwa-speed.
+		--service-name	# =NAME -- Defines the name of the
+				service: /lib/systemd/system/NAME.service;
+				config file will be NAME.json -- defaults
+				to lcwa-speed.
+		--env-file	# =path & filename of env-file.
+				Defaults to /etc/default/lcwa-speed
+ 
+###########################################################################################################
+
+config-lcwa-speed-services.sh --help
+
+config-lcwa-speed-services.sh: Installs systemd service and timer unit files for the lcwa-speed service.
+
+Syntax: config-lcwa-speed-services.sh 
+
+            Optional parameters:
+		-h|--help	# Displays this help
+		-d|--debug	# Shows debugging info.
+		-q|--quiet	# Supresses message output.
+		-t|--test	# Tests script logic without performing
+				actions.
+		-l|--list	# Lists all the services and timers
+				created by this script.
+		--start	# Starts the enabled services and timers
+		--stop	# Stops the running services and timers
+		--enable	# Enables the configured services
+				and timers
+		--disable	# Disables the configured services
+				and timers
+		--status	# Lists the status of the services and
+				timers created by this script
+		-p|--pppck|--pppoe	# Forces install of the PPPoE keep-alive
+				timer.
+		-r|--remove|--uninstall	# Disables and removes the lcwa-speed
+				services and timers
+		--inst-name	# =NAME -- Instance name that defines the
+				install location: /usr/local/share/NAME
+				and user account name -- defaults to
+				lcwa-speed.
+		--service-name	# =NAME -- Defines the name of the
+				service: /lib/systemd/system/NAME.service
+				-- defaults to lcwa-speed.
+		--env-file	# =NAME -- Read a specific env file to
+				get the locations for the install.
+ 
+###########################################################################################################
+
+config-lcwa-speed-utils.sh --help
+
+config-lcwa-speed-utils.sh: Installs basic bash scripts used by lcwa-speed to /usr/local/sbin
+
+Syntax: config-lcwa-speed-utils.sh 
+
+            Optional parameters:
+		-h|--help	# Displays this help
+		-d|--debug	# Shows debugging info.
+		-q|--quiet	# Supresses message output.
+		-v|--verbose	# Increase message output.
+		-f|--force	# Force overwriting target files.
+		-t|--test	# Tests script logic without performing
+				actions.
+		-r|--remove|--uninstall
+ 
+###########################################################################################################
+
+config-lcwa-speed-fw.sh --help
+
+config-lcwa-speed-fw.sh: Configures and opens firewall for bootpc, ssh & iperf3 ports
+
+Syntax: config-lcwa-speed-fw.sh 
+
+            Optional parameters:
+		-h|--help	# Displays this help
+		-d|--debug	# Shows debugging info.
+		-q|--quiet	# Supresses message output.
+		-f|--force	# Force wipe of any existing firewall
+				rules.
+		-t|--test	# Tests script logic without performing
+				actions.
+		-p|--private	# Open default ports to local subnet only.
+		-p|--pubic	# Open default ports to any subnet.
+ 

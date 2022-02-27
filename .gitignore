@@ -1,0 +1,12 @@
+# Itnore the local network update script
+
+get-updates.sh
+
+configs/
+
+default/
+
+test_bins/
+
+scripts/makelinks.sh
+
