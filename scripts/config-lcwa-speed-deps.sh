@@ -4,7 +4,7 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 ######################################################################################################
-SCRIPT_VERSION=20220227.214039
+SCRIPT_VERSION=20220227.230731
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -127,6 +127,38 @@ home_dir_create(){
 
 	[ -d "$LLCWA_HOMEDIR" ] && return 0 || return 1
 }
+
+is_raspberry_pi(){
+	debug_echo "${FUNCNAME}( $@ )"
+	
+	[ $FORCE -gt 0 ] && return 0
+	
+	local LIS_RPI=0
+
+	if [ -z "$(which lsb_release 2>/dev/null)" ]; then
+		[ $QUIET -lt 1 ] && error_echo "${SCRIPT_NAME} error: no lsb_release found."
+		[ $QUIET -lt 1 ] && error_echo "This system is probably not a Raspberry Pi."
+		return 1
+	fi
+
+	# Raspbian GNU/Linux 10 (buster) & Raspbian GNU/Linux 11 (bullseye)
+	LIS_RPI=$(lsb_release -sd | grep -c 'Raspbian')
+
+	if [ $LIS_RPI -lt 1 ]; then
+		error_echo "${SCRIPT_NAME}: lsb_release reports $(lsb_release -sd)."
+		error_echo "This system is probably not a Raspberry Pi."
+		return 1
+	fi
+	
+	# Can we find the config utility?
+	local LRASPI_CONFIG="$(which raspi-config)"
+	if [ -z "$LRASPI_CONFIG" ]; then
+		error_echo "${SCRIPT_NAME} error: connot fine raspi-config utility."
+		error_echo "This system is probably not a Raspberry Pi."
+		return 1
+	fi
+}
+
 
 apt_update(){
 	debug_echo "${FUNCNAME}( $@ )"

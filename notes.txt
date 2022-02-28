@@ -20,31 +20,7 @@
 # 	
 # 	scripts/config-lcwa-speed-utils.sh		--	installs various utility scripts
 # 	
-# 	scripts/config-lcwa-speed-fw.sh			--  configures the system firewall
+# 	scripts/config-lcwa-speed-fw.sh		--  configures the system firewall
 #
-# 	scripts/config-lcwa-speed-pppoe.sh		--  configures the system for a self-pppoe connection
-#
-# 	
 	
 	
-	
-
-
-
-bak
-chkfw.sh
-chknet.sh
-scripts/config-firewall-prep-apps.sh
-scripts/config-firewall.sh
-scripts/config-network.sh
-scripts/config-ookla-speedtest.sh
-scripts/config-rpi-prep.sh
-getscripts.sh
-instsrv_functions.sh
-lcwa-speed
-lcwa-speed-debug.sh
-lcwa-speed-env.sh
-lcwa-speed-pppck.sh
-lcwa-speed-update.sh
-makelinks.sh
-test-vars.sh

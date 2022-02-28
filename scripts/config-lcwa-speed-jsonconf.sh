@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script creating the config.json file required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 ######################################################################################################
-SCRIPT_VERSION=20220227.120856
+SCRIPT_VERSION=20220227.231706
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -512,7 +512,7 @@ db_keyfile_install(){
 	error_echo "Creating dropbox key file ${LCWA_DB_KEYFILE} from encrypted source."
 	error_echo "                Please enter the short canonical password when prompted."
 	error_echo " "
-	echo "U2FsdGVkX18fLV7OVTsMgF+SrMMI05OFtrQcRur6KZ7Ft2+eaC7rRkBJ/stnDggVFro27mMsM2CM4Y4WXEwVuAV9LcajUN+UI0e7e0q3ymYqajoHnX/TBjdUqiEYMNbO" | openssl enc -aes-256-cbc -pbkdf2 -d -a -out "$LCWA_DB_KEYFILE" -pass pass:!EwA!
+	echo "U2FsdGVkX18fLV7OVTsMgF+SrMMI05OFtrQcRur6KZ7Ft2+eaC7rRkBJ/stnDggVFro27mMsM2CM4Y4WXEwVuAV9LcajUN+UI0e7e0q3ymYqajoHnX/TBjdUqiEYMNbO" | openssl enc -aes-256-cbc -pbkdf2 -d -a -out "$LCWA_DB_KEYFILE" -pass 'pass:!EwA!'
 
 	debug_pause "${FUNCNAME}: ${LINENO}"
 }
@@ -659,6 +659,8 @@ fi
 
 #########################################################################
 # Processing
+
+[ ! -d "$LCWA_CONFDIR" ] && mkdir -p "$LCWA_CONFDIR"
 
 # Validate Andi's config.json
 INST_REPO_CONFIG_JSON="${LCWA_REPO_LOCAL}/config/test_speed_cfg.json"

@@ -4,7 +4,7 @@
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
 ######################################################################################################
-SCRIPT_VERSION=20220227.213654
+SCRIPT_VERSION=20220227.233332
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -153,6 +153,9 @@ basic_utils_install(){
 				zip \
 				unzip \
 				sshpass"
+				
+		is_raspberry_pi && LPKG_LIST="${LPKG_LIST} libatlas-base-dev"
+		
 		LPKG_LIST="$(echo $LPKG_LIST | xargs)"				
 		[ $TEST -lt 1 ] && apt_update
 		[ $TEST -lt 1 ] && apt_install $LPKG_LIST

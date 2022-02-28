@@ -1,85 +1,10 @@
 #!/bin/bash
 
-#Todo:
-
-# Review environmental vars
-# LCWA_NO_UPDATES should be a settable var, defaulting to 1......................done
-# 
-# 
-# Identify Utility scripts:
-#  	Raspberry Pi Prep script: 			scripts/config-rpi-prep.sh	.............done
-# 	Ookla speedtest install script		scripts/config-ookla-speedtest.sh  ......done
-# 	Dependency install script           scripts/config-lcwa-speed-deps.sh  ......done
-# 	config json install script			scripts/config-lcwa-speed-jsonconf.sh  ..done
-# 	pppchk.sh script					scripts/lcwa-speed-pppck.sh  ............done
-#   lcwa-speed debugging script			scripts/lcwa-speed-debug.sh  ............done
-# 	lcwa-speed-update.sh script			scripts/lcwa-speed-update.sh  ...........done
-#
-# Check utility scripts for env var use
-#	Env vars definition script			scripts/lcwa-speed-env.sh................done
-#	Env file create script				scripts/config-lcwa-speed-env.sh.........done
-#  	Raspberry Pi Prep script			scripts/config-rpi-prep.sh...............done
-# 	Ookla speedtest install script		scripts/config-ookla-speedtest.sh........done
-# 	Dependency install script			scripts/config-lcwa-speed-deps.sh........done
-# 	Config json install script			scripts/config-lcwa-speed-jsonconf.sh....done
-# 	pppchk.sh script					scripts/lcwa-speed-pppck.sh..............done
-#   lcwa-speed-debug.sh script			scripts/lcwa-speed-debug.sh..............done
-# 	lcwa-speed-update.sh script			scripts/lcwa-speed-update.sh
-#
-# config-rpi-prep.sh: Add setting NTPServers to /etc/systemd/timesyncd.conf......done
-#
-# Replace LCWA_APP with LCWA_INSTANCE in all scripts.............................done
-#
-# Update REPO URLs in config-lcwa-speed.sh.......................................done
-#
-# Add support for LCWA_SERVICE_NAME to config-lcwa-speed.sh
-# Add support for using a pre-existing env file for config-lcwa-speed.sh
-# Review and clean cmdline options for config-lcwa-speed.sh
-# Work out LCWA_SERVICE vs LCWA_SERVICE_NAME ....................................done
-# Check config-lcwa-speed.sh script for env var use
-#
-# Update gharris999/LCWA fork from upstream master...............................done
-# Apply reapply patches to gharris999/LCWA.......................................done
-# Push patches to gharris999.....................................................done
-# 
-# Review repo references in config-lcwa-speed.sh
-# Test through env file create
-# Test through dependency install
-# Test through config json install
-# Test through repo installs
-# 
-# Review and factor lcwa-speed-update.sh invocation via cron / systemd.timers
-# 
-# Create pppoe-connect.service....................................................done
-# 
-# Test through timer installations
-# 
-# Test through to lcwa-speed.service installation, enable, start
-# 
-# Test through installation complete
-# 
-# Test install on newly installed Pi.
-# 
-# Test install on fresh LC99.
-# 
-# Test install on LC05
-# 
-# Test install on LC20
-# 
-# Test install on LC16
-# 
-# Test install on LC18
-# 
-# Update config-lcwa-speed repo.
-
-
-
-
 ######################################################################################################
 # Bash script for installing Andi Klein's Python LCWA PPPoE Speedtest Logger
-# as a service on systemd, upstart & sysv systems
+# as a service on systemd systems
 ######################################################################################################
-SCRIPT_VERSION=20220227.144800
+SCRIPT_VERSION=20220227.234424
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPTNAME=$(basename $0)
@@ -318,21 +243,6 @@ script_opts_set_all(){
 ###########################################################################################
 ###########################################################################################
 ###########################################################################################
-
-# Args needed by the various install scripts:
-# 
-# config-lcwa-speed.sh			--inst-name --service-name --env-file
-# 
-# All scripts need: 				--force --env-file --uninstall
-# 
-# config-lcwa-speed-sysprep.sh	
-# config-lcwa-speed-inst.sh 		--clean
-# config-lcwa-speed-deps.sh 		--clean --keep-cache --force
-# config-lcwa-speed-repos.sh		--shallow --branch --supbranch --update
-# config-lcwa-speed-jsonconf.sh 	
-# config-lcwa-speed-services.sh	--pppoe
-# config-lcwa-speed-utils.sh		
-# config-lcwa-speed-fw.sh			--private --public
 
 PREP_OPTS=
 INST_OPTS=

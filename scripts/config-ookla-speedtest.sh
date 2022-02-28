@@ -1093,7 +1093,7 @@ PRE_ARGS="$@"
 is_root
 
 
-SHORTARGS='hdqtfnruik'
+SHORTARGS='hdqvtfnruik'
 LONGARGS="
 help,
 debug,
@@ -1188,6 +1188,9 @@ do
 done
 
 [ $VERBOSE -gt 0 ] && error_echo "${SCRIPTNAME} ${PRE_ARGS}"
+
+# Force direct (non-package manager) download & install for rpi systems..
+[ $(uname -m | grep -c 'arm') -gt 0 ] && DIRECT=1
 
 
 if [ ! -z "$LCWA_ENVFILE" ] && [ -f "$LCWA_ENVFILE" ]; then
