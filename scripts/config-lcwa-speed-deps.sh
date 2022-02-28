@@ -4,7 +4,7 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 ######################################################################################################
-SCRIPT_VERSION=20220227.205534
+SCRIPT_VERSION=20220227.214039
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -139,9 +139,11 @@ apt_update(){
 ############################################################################
 apt_install(){
 	debug_echo "${FUNCNAME}( $@ )"
-	local LPKG_LIST="$1"
+	local LPKG_LIST="$@"
 	local LPKG=
 	local LRET=1
+	
+	[ $VERBOSE -gt 0 ] && error_echo "Packages selected for install: ${LPKG_LIST}"
 	
 	for LPKG in $LPKG_LIST
 	do
@@ -150,7 +152,6 @@ apt_install(){
 			[ $VERBOSE -gt 0 ] && error_echo "Package ${LPKG} already installed.."
 			continue
 		fi
-
 	
 		# Make 3 attempts to install packages.  RPi's package repositories have a tendency to time-out..
 		[ $QUIET -lt 1 ] && error_echo "Installing package ${LPKG}.."
@@ -414,15 +415,14 @@ pkg_deps_install(){
 	local LPKG_LIST=
 	local LPKG=
 
-	error_echo "========================================================================================="
-	error_echo "Installing system development package dependencies.."
+	[ $QUIET -gt 0 ] && error_echo "Installing system development package dependencies.."
 
 	if [ $TEST -lt 1 ]; then
 
 		if [ $USE_APT -gt 0 ]; then
 		
 			# Update the apt cache..
-			apt_update
+			#~ apt_update
 		
 			#~ [ $IS_FOCAL -lt 1 ] && LIBFFI='libffi6' || LIBFFI='libffi7'
 			LIBFFI="$(apt-cache search 'libffi[0-9]{1,3}' | awk '{ print $1 }')"
@@ -435,6 +435,7 @@ pkg_deps_install(){
 				wget \
 				whois \
 				ufw \
+				file \
 				git \
 				git-extras \
 				gzip \
@@ -458,8 +459,10 @@ pkg_deps_install(){
 
 			LPKG_LIST="$(echo $LPKG_LIST | xargs)"
 			
-			LPKG_LIST="$(pkg_check "$LPKG_LIST")"
+			[ $QUIET -gt 0 ] && error_echo "Checking package list.."
 
+			LPKG_LIST="$(pkg_check "$LPKG_LIST")"
+			
 			apt_install $LPKG_LIST
 			LRET=$?
 
@@ -538,7 +541,6 @@ python_libs_install(){
 	# Install system python3 development packages..
 	
 	if [ $TEST -lt 1 ]; then
-		error_echo "========================================================================================="
 		error_echo "Installing python3 development dackages.."
 
 		if [ $USE_APT -gt 0 ]; then
@@ -559,6 +561,9 @@ python_libs_install(){
 				pkg-config"
 				
 			LPKG_LIST="$(echo $LPKG_LIST | xargs)"
+
+			[ $QUIET -gt 0 ] && error_echo "Checking package list.."
+
 			LPKG_LIST="$(pkg_check "$LPKG_LIST")"
 
 			apt_install "$LPKG_LIST"

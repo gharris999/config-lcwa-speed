@@ -4,7 +4,7 @@
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
 ######################################################################################################
-SCRIPT_VERSION=20220227.160717
+SCRIPT_VERSION=20220227.213654
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -58,7 +58,7 @@ apt_update(){
 ############################################################################
 apt_install(){
 	debug_echo "${FUNCNAME}( $@ )"
-	local LPKG_LIST="$1"
+	local LPKG_LIST="$@"
 	local LPKG=
 	local LRET=1
 	
@@ -155,7 +155,7 @@ basic_utils_install(){
 				sshpass"
 		LPKG_LIST="$(echo $LPKG_LIST | xargs)"				
 		[ $TEST -lt 1 ] && apt_update
-		[ $TEST -lt 1 ] && apt_install "$LPKG_LIST"
+		[ $TEST -lt 1 ] && apt_install $LPKG_LIST
 		LRET=$?
 	else
 		LPKG_LIST=" \
