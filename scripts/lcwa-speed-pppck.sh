@@ -4,7 +4,7 @@
 # Bash script to check to see if a auto initiated pppoe connection is still up, and if not, re-establish it.
 ############################################################################################################
 
-SCRIPT_VERSION=20220227.183114
+SCRIPT_VERSION=20220228.074614
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -71,7 +71,7 @@ crontab_entry_set(){
 		PPPOE_ACCOUNT="$(grep -E '^auto.*lcwa.*$|^auto.*provider.*$' "$LINTERFACES" | awk '{ print $2 }')"
 		if [ ! -z "$PPPOE_ACCOUNT" ]; then
 			COMMENT="#At every 10th minute, check the ${PPPOE_ACCOUNT} PPPoE connecton and reestablish it if down."
-			EVENT="*/10 * * * * /usr/local/sbin/lcwa-speed-pppck.sh | /usr/bin/logger -t lcwa-speed-pppck"
+			EVENT="*/10 * * * * /usr/local/sbin/lcwa-speed-pppck.sh 2>&1 | /usr/bin/logger -t lcwa-speed-pppck"
 
 			# Remove any old reference to chkppp.sh
 			sed -i "/^#.*${PPPOE_ACCOUNT}.*$/d" "$ROOTCRONTAB"
@@ -232,7 +232,7 @@ ppp_link_check(){
 
 # Process cmd line args..
 SHORTARGS='hqftw:'
-LONGARGS='help,quiet,force,test,crontab-set,crontab-clear,wait:'
+LONGARGS='help,quiet,force,test,history,crontab-set,crontab-clear,wait:'
 ARGS=$(getopt -o "$SHORTARGS" -l "$LONGARGS"  -n "$(basename $0)" -- $@)
 
 eval set -- "$ARGS"
@@ -254,6 +254,10 @@ while [ $# -gt 0 ]; do
 			;;
 		-t|--test)
 			TEST=1
+			;;
+		--history)		# greps the syslog for crontab lcwa-speed-pppck entries
+			cat /var/log/syslog | grep 'lcwa-speed-pppck:'
+			exit 0
 			;;
 		--crontab-set)	# Add a contab entry to run this script every 10 minutes.
 			crontab_entry_set
