@@ -4,7 +4,7 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 ######################################################################################################
-SCRIPT_VERSION=20220227.131334
+SCRIPT_VERSION=20220227.205534
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -435,6 +435,8 @@ pkg_deps_install(){
 				wget \
 				whois \
 				ufw \
+				git \
+				git-extras \
 				gzip \
 				zip \
 				unzip \
