@@ -201,51 +201,20 @@ debug_cat(){
 ######################################################################################################
 apt_update(){
 	debug_echo "${FUNCNAME}( $@ )"
-	# Maximum allowable cache age, in seconds
-	#         hours * minutes * seconds
-	local MAXAGE=$((2 * 60 * 60))
-	local CACHEDIR='/var/lib/apt/lists'
 	
-	local DIRS=
-	local NOWDATE=
-	local FILEDATE=
-	local NEWESTFILE=
-	local CACHEAGE=
-	local SZCACHEAGE=
-	
-	# bc utility is required, but not necessarily present, so always
-	#   update the apt cache if it's not installed..
-	if [ -z "$(which bc)" ]; then
-		apt-get update >/dev/null 2>&1
-		return 1
-	fi
-	
-	#~ local DIRS=$(find $CACHEDIR -maxdepth 1 -mindepth 1 -type d | sed -e 's#^.*/\([^/]*\).*$#\1#')
-	#~ DIRS=$(echo $DIRS | sed -e 's/ /\|/g')
-	#~ local NEWESTFILE=$(ls -1t $CACHEDIR | egrep -v $DIRS | head -1)
-	# Include the directories when calculating the cache age..
-	local NEWESTFILE="$(ls -1t "$CACHEDIR" | head -1)"
-	
-	if [ -z "$NEWESTFILE" ]; then
-		FILEDATE=0
+	local MAX_AGE=$((2 * 60 * 60))
+	local CACHE_DIR='/var/cache/apt/'
+	local CACHE_DATE=$(stat -c %Y "$CACHE_DIR")
+	local NOW_DATE=$(date --utc '+%s')
+	local CACHE_AGE=$(($NOW_DATE - $CACHE_DATE))
+	local SZCACHE_AGE="$(echo "scale=2; (${CACHE_AGE} / 60 / 60)" | bc) hours"
+
+	if [ $FORCE -gt 0 ] || [ $CACHE_AGE -gt $CACHE_AGE ]; then
+		[ $CACHE_AGE -gt $CACHE_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date.  Updating apt-get package cacahe.."
+		[ $DEBUG -gt 0 ] && apt-update || apt-get -qq update
 	else
-		NEWESTFILE="${CACHEDIR}/${NEWESTFILE}"
-		FILEDATE=$(date --utc --reference="$NEWESTFILE" '+%s')
+		[ $VERBOSE -gt 0 ] && error_echo  "Local apt cache is up to date as of ${SZCACHE_AGE} ago."
 	fi
-
-	NOWDATE=$(date --utc '+%s')
-	CACHEAGE=$(($NOWDATE - $FILEDATE))
-	
-	SZCACHEAGE="$(echo "scale=2; (${CACHEAGE} / 60 / 60)" | bc) hours"
-
-	if [ $FORCE -gt 0 ] || [ $CACHEAGE -gt $MAXAGE ]; then
-		[ $CACHEAGE -gt $MAXAGE ] && [ $QUIET -lt 1 ] && error_echo "apt-get updating local cache.."
-		apt-get update >/dev/null 2>&1
-	else
-		[ $QUIET -lt 1 ] && error_echo "apt-get local cache is up to date as of ${SZCACHEAGE} ago."
-	fi
-
-	debug_pause "${LINENO} -- ${FUNCNAME}() done."
 }
 
 ############################################################################

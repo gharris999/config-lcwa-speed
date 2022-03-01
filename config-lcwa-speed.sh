@@ -4,7 +4,7 @@
 # Bash script for installing Andi Klein's Python LCWA PPPoE Speedtest Logger
 # as a service on systemd systems
 ######################################################################################################
-SCRIPT_VERSION=20220227.234424
+SCRIPT_VERSION=20220228.210640
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPTNAME=$(basename $0)
@@ -32,6 +32,9 @@ fi
 ######################################################################################################
 # Vars
 ######################################################################################################
+
+# Locale setting override..
+export LC_ALL=C
 
 DEBUG=0
 QUIET=0
@@ -326,7 +329,7 @@ while [ $# -gt 0 ]; do
 			script_opts_set_all "$1"
 			;;
 		-f|--force)			# Invokes force overwrite conditions in install scripts
-			FORCE=1
+			((FORCE+=1))
 			script_opts_set_all "$1"
 			;;
 		--no-pause)		# Inhibits banner pause
@@ -440,6 +443,16 @@ else
 
 	# Prepare the system
 	inst_script_execute config-lcwa-speed-sysprep.sh $PREP_OPTS
+	
+	# Update the system locale vars (only rpi)
+	LOCALE_SCR='/tmp/locale.sh'
+	if [ -f "$LOCALE_SCR" ]; then
+		[ $QUIET -lt 1 ] && error_echo "Updating and exporting locale vars.."
+		unset LANG
+		. "$LOCALE_SCR"
+		export LANG=$LANG
+		[ $DEBUG -gt 1 ] && locale
+	fi
 
 	# Create the instance
 	inst_script_execute config-lcwa-speed-inst.sh $INST_OPTS

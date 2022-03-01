@@ -6,6 +6,8 @@ configs/
 
 default/
 
+rpi/
+
 test_bins/
 
 scripts/makelinks.sh

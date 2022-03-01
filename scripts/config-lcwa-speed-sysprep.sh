@@ -4,7 +4,7 @@
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
 ######################################################################################################
-SCRIPT_VERSION=20220227.233332
+SCRIPT_VERSION=20220228.201750
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -48,9 +48,20 @@ INST_DESC='LCWA PPPoE Speedtest Logger system prep script'
 
 apt_update(){
 	debug_echo "${FUNCNAME}( $@ )"
-	[ $QUIET -lt 1 ] && error_echo "Updating apt-get package cacahe.."
 	
-	apt-get -qq update
+	local MAX_AGE=$((2 * 60 * 60))
+	local CACHE_DIR='/var/cache/apt/'
+	local CACHE_DATE=$(stat -c %Y "$CACHE_DIR")
+	local NOW_DATE=$(date --utc '+%s')
+	local CACHE_AGE=$(($NOW_DATE - $CACHE_DATE))
+	local SZCACHE_AGE="$(echo "scale=2; (${CACHE_AGE} / 60 / 60)" | bc) hours"
+
+	if [ $FORCE -gt 0 ] || [ $CACHE_AGE -gt $CACHE_AGE ]; then
+		[ $CACHE_AGE -gt $CACHE_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date.  Updating apt-get package cacahe.."
+		[ $DEBUG -gt 0 ] && apt-update || apt-get -qq update
+	else
+		[ $VERBOSE -gt 0 ] && error_echo  "Local apt cache is up to date as of ${SZCACHE_AGE} ago."
+	fi
 }
 
 ############################################################################
@@ -507,27 +518,49 @@ rpi_def_user_lock(){
 ###################################################
 rpi_locale_set(){
 	debug_echo "${FUNCNAME}( $@ )"
-	local LLOCALE="${1:-'en_US.UTF-8'}"
-	local LOCALE_LINE=
+	local LNEW_LOCALE="${1:-en_US.UTF-8}"
+	local LDEF_LOCALE='en_GB.UTF-8'
+	local LSUP_FILE='/usr/share/i18n/SUPPORTED'
+	local LGEN_FILE='/etc/locale.gen'
+	local LNEW_LOCALE_LINE=
+	local LNEW_LANG=
 	local LRET=1
-	
-	[ $TEST -gt 0 ] && return 0
-	
-	[ $QUIET -lt 1 ] && error_echo "Setting system locale to ${LLOCALE}.."
 
-	
-    if ! LOCALE_LINE="$(grep -E "^${LLOCALE}( |$)" /usr/share/i18n/SUPPORTED)"; then
-      LRET=1
+	[ $TEST -gt 0 ] && return 0
+
+	[ $QUIET -lt 1 ] && error_echo "Setting system locale to ${LNEW_LOCALE}.."
+
+	LNEW_LOCALE_LINE="$(grep -E "^${LNEW_LOCALE}( |$)" "$LSUP_FILE")"
+
+	if [ -z "$LNEW_LOCALE_LINE" ]; then
+		error_echo "${FUNCNAME}(${LNEW_LOCALE}): error ${LNEW_LOCALE} is not a supported local."
+		LRET=1
 	else
+		LNEW_LANG="$(echo $LNEW_LOCALE_LINE | cut -f1 -d " ")"
 		export LC_ALL=C
 		export LANG=C
-		local LG="/etc/locale.gen"
-		local NEW_LANG="$(echo $LOCALE_LINE | cut -f1 -d " ")"
-		[ -L "$LG" ] && [ "$(readlink $LG)" = "/usr/share/i18n/SUPPORTED" ] && rm -f "$LG"
-		echo "$LOCALE_LINE" > /etc/locale.gen
+		#~ export "LANG=${LNEW_LANG}"
+		
+		if [ -L "$LGEN_FILE" ] && [ "$(readlink $LGEN_FILE)" = "$LSUP_FILE" ]; then
+			[ $QUIET -lt 1 ] && error_echo "Deleting ${LGEN_FILE} link to $(readlink -f "$LGEN_FILE")"
+			rm -f "$LGEN_FILE"
+		fi
+
+		[ $QUIET -lt 1 ] && error_echo "Adding ${LLOCALE_LINE} to ${LGEN_FILE}"
+		echo "$LLOCALE_LINE" > "$LGEN_FILE"
+		
 		update-locale --no-checks LANG
-		update-locale --no-checks "LANG=$NEW_LANG"
+		update-locale --no-checks "LANG=${LNEW_LANG}"
 		dpkg-reconfigure -f noninteractive locales
+		
+		echo "LANG=${LNEW_LANG}" >/tmp/locale.sh
+		
+		#~ sed -i -e "s/^#*.*${LNEW_LOCALE}/${LNEW_LOCALE}/" "$LGEN_FILE"
+		#~ sed -i -e "s/^#*.*${LDEF_LOCALE}/# ${LDEF_LOCALE}/" "$LGEN_FILE"
+		
+		#~ locale-gen "$LNEW_LOCALE"
+		#~ update-locale "$LNEW_LOCALE"
+		
 		LRET=$?
 	fi
 

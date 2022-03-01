@@ -4,7 +4,7 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 ######################################################################################################
-SCRIPT_VERSION=20220227.230731
+SCRIPT_VERSION=20220228.210920
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -159,11 +159,24 @@ is_raspberry_pi(){
 	fi
 }
 
-
 apt_update(){
 	debug_echo "${FUNCNAME}( $@ )"
-	[ $QUIET -lt 1 ] && error_echo "Updating apt-get package cacahe.."
-	[ $DEBUG -gt 0 ] && apt-update || apt-get -qq update
+	
+	local MAX_AGE=$((2 * 60 * 60))
+	local CACHE_DIR='/var/cache/apt/'
+	local CACHE_DATE=$(stat -c %Y "$CACHE_DIR")
+	local NOW_DATE=$(date --utc '+%s')
+	local CACHE_AGE=$(($NOW_DATE - $CACHE_DATE))
+	local SZCACHE_AGE="$(echo "scale=2; (${CACHE_AGE} / 60 / 60)" | bc) hours"
+	local LFIX_MISSING=
+
+	if [ $FORCE -gt 0 ] || [ $CACHE_AGE -gt $CACHE_AGE ]; then
+		[ $CACHE_AGE -gt $CACHE_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date.  Updating apt-get package cacahe.."
+		[ $FORCE -gt 1 ] && LFIX_MISSING='--fix-missing'
+		[ $DEBUG -gt 0 ] && apt-get update "$LFIX_MISSING" || apt-get -qq update "$LFIX_MISSING"
+	else
+		[ $VERBOSE -gt 0 ] && error_echo  "Local apt cache is up to date as of ${SZCACHE_AGE} ago."
+	fi
 }
 
 ############################################################################
@@ -454,7 +467,7 @@ pkg_deps_install(){
 		if [ $USE_APT -gt 0 ]; then
 		
 			# Update the apt cache..
-			#~ apt_update
+			[ $FORCE -gt 1 ] && apt_update
 		
 			#~ [ $IS_FOCAL -lt 1 ] && LIBFFI='libffi6' || LIBFFI='libffi7'
 			LIBFFI="$(apt-cache search 'libffi[0-9]{1,3}' | awk '{ print $1 }')"
@@ -576,6 +589,8 @@ python_libs_install(){
 		error_echo "Installing python3 development dackages.."
 
 		if [ $USE_APT -gt 0 ]; then
+		
+			[ $FORCE -gt 1 ] && apt_update
 		
 			# Figure out which version of python3-venv to install..
 			local LVER="$(python3 --version | sed -n -e 's/^.* \([[:digit:]]\{1\}\.[[:digit:]]\{1\}\).*$/\1/p')"
@@ -810,10 +825,10 @@ do
 			;;
 		-v|--verbose)		# Increase message output.
 			QUIET=0
-			VERBOSE=1
+			((VERBOSE+=1))
 			;;
 		-f|--force)			# Forces reinstall of jq commandline JSON processor
-			FORCE=1
+			((FORCE+=1))
 			;;
 		-t|--test)			# Tests script logic without performing actions.
 			TEST=1

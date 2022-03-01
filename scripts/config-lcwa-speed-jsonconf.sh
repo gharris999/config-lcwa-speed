@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script creating the config.json file required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 ######################################################################################################
-SCRIPT_VERSION=20220227.231706
+SCRIPT_VERSION=20220228.084124
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -70,7 +70,20 @@ debug_echo "Including file: ${INCLUDE_FILE}"
 
 apt_update(){
 	debug_echo "${FUNCNAME}( $@ )"
-	[ $DEBUG -gt 0 ] && apt-update || apt-get -qq update
+	
+	local MAX_AGE=$((2 * 60 * 60))
+	local CACHE_DIR='/var/cache/apt/'
+	local CACHE_DATE=$(stat -c %Y "$CACHE_DIR")
+	local NOW_DATE=$(date --utc '+%s')
+	local CACHE_AGE=$(($NOW_DATE - $CACHE_DATE))
+	local SZCACHE_AGE="$(echo "scale=2; (${CACHE_AGE} / 60 / 60)" | bc) hours"
+
+	if [ $FORCE -gt 0 ] || [ $CACHE_AGE -gt $CACHE_AGE ]; then
+		[ $CACHE_AGE -gt $CACHE_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date.  Updating apt-get package cacahe.."
+		[ $DEBUG -gt 0 ] && apt-update || apt-get -qq update
+	else
+		[ $VERBOSE -gt 0 ] && error_echo  "Local apt cache is up to date as of ${SZCACHE_AGE} ago."
+	fi
 }
 
 ############################################################################
