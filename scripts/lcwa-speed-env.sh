@@ -56,7 +56,7 @@ env_file_exists(){
 #~ LCWA_PRODUCT="$INST_PROD"
 #~ LCWA_DESC="$INST_DESC"
 #~ LCWA_PRODUCTID="f1a4af09-977c-458a-b3f7-f530fb9029c1"				# Random GUID..
-#~ LCWA_VERSION=20220227.163212
+#~ LCWA_VERSION=20220301.084752
 
 # User account and group under which the service will run..
 #~ LCWA_USER="$INST_USER"
@@ -188,7 +188,7 @@ function env_vars_defaults_get(){
 [ -z "$LCWA_PRODUCT" ] 				&&  LCWA_PRODUCT="$INST_PROD"
 [ -z "$LCWA_DESC" ] 				&&  LCWA_DESC="$INST_DESC"
 [ -z "$LCWA_PRODUCTID" ] 			&&  LCWA_PRODUCTID="f1a4af09-977c-458a-b3f7-f530fb9029c1"				
-[ -z "$LCWA_VERSION" ] 				&&  LCWA_VERSION=20220227.163212
+[ -z "$LCWA_VERSION" ] 				&&  LCWA_VERSION=20220301.084752
                                                             
 # User account and group under which the service will run.. 
 [ -z "$LCWA_USER" ] 				&&  LCWA_USER="$LCWA_INSTANCE"
@@ -238,7 +238,7 @@ function env_vars_defaults_get(){
 [ -z "$LCWA_UPDATE_TIMER" ] 		&&  LCWA_UPDATE_TIMER="/lib/systemd/system/${INST_NAME}-update.timer"
 [ -z "$LCWA_PPPOE_INSTALL" ] 		&&  LCWA_PPPOE_INSTALL=0
 [ -z "$LCWA_PPPOE_PROVIDER" ] 		&&  LCWA_PPPOE_PROVIDER="provider"
-[ -z "$LCWA_PPPOE_PASSWORD" ] 		&&  LCWA_PPPOE_PASSWORD=""
+[ -z "$LCWA_PPPOE_PASSWORD" ] 		&&  LCWA_PPPOE_PASSWORD="password"
 
                                                             
 # Other control variables for the update script             

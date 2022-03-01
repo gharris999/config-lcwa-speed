@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220228.224222
+SCRIPT_VERSION=20220301.084412
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -47,6 +47,7 @@ ENABLE=1
 DISABLE=0
 NO_START=0
 NO_PPPOE=0
+PPPOE_INSTALL=0
 
 ACTION=
 
@@ -214,7 +215,7 @@ lcwa_speed_unit_file_create(){
 	
 	#~ systemd_uint_enable "${LCWA_SERVICE}.service"
 	
-	debug_pause "${LINENO} ${FUNCNAME}() done."
+	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 
 	return 0
 }
@@ -266,8 +267,7 @@ lcwa_speed_update_timer_create(){
 		[ $TEST -lt 1 ] && chmod 0644 "$LUPDATE_SERVICE_FILE"
 	fi
 	
-	[ $DEBUG -gt 0 ] && debug_cat "$LUPDATE_SERVICE_FILE"	
-	[ $DEBUG -gt 0 ] && debug_pause "${FUNCNAME}: ${LINENO}"
+	[ $DEBUG -gt 2 ] && debug_cat "$LUPDATE_SERVICE_FILE"	
 
 	# Create the timer file
 	LUPDATE_TIMER_NAME="${LCWA_SERVICE}-update.timer"
@@ -302,13 +302,12 @@ lcwa_speed_update_timer_create(){
 		[ $TEST -lt 1 ] && chmod 0644 "$LUPDATE_TIMER_FILE"
 	fi
 	
-	[ $DEBUG -gt 1 ] && debug_cat "$LUPDATE_TIMER_FILE"	
-	[ $DEBUG -gt 1 ] && debug_pause "${FUNCNAME}: ${LINENO}"	
+	[ $DEBUG -gt 2 ] && debug_cat "$LUPDATE_TIMER_FILE"	
 
 	# Enable the timer
-	systemd_uint_enable "$LUPDATE_TIMER_NAME"
+	#~ systemd_uint_enable "$LUPDATE_TIMER_NAME"
 	
-	debug_pause "${LINENO} ${FUNCNAME}() done."
+	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 	
 }
 
@@ -361,8 +360,8 @@ lcwa_pppoe_provider_create(){
 	fi
 	
 	# Search for the provider name in the /etc/ppp/chap-secrets file
-	LCWA_PPPOE_PROVIDER
-	LCWA_PPPOE_PASSWORD
+	#~ LCWA_PPPOE_PROVIDER
+	#~ LCWA_PPPOE_PASSWORD
 	
 	# Note: Fedora's ppp package doesn't create the peers directory
 	[ ! -d "$LPROVIDER_DIR" ] && mkdir -p "$LPROVIDER_DIR"
@@ -397,6 +396,9 @@ lcwa_pppoe_provider_create(){
 	usepeerdns
 	EOF_PROVIDER
 	
+	[ $DEBUG -gt 2 ] && debug_cat "$LPROVIDER_FILE"	
+
+	
 	# Create the /etc/ppp/chap-secrets
 	local LSECRETS_FILE='/etc/ppp/chap-secrets'
 
@@ -419,6 +421,9 @@ lcwa_pppoe_provider_create(){
 	"speedtest20g" "speedtest20g" "ocm68hv0"
 	
 	EOF_SECRETS0
+	
+	[ $DEBUG -gt 2 ] && debug_cat "$LSECRETS_FILE"	
+
 	
 	# See if our provider & password are in the secrets file..if not, add it.
 	if [ $(cat "$LSECRETS_FILE" | grep -E "^.*${LCWA_PPPOE_PROVIDER}.*${LCWA_PPPOE_PASSWORD}.*$") -lt 1 ]; then
@@ -466,12 +471,15 @@ lcwa_pppoe_provider_create(){
 
 	EOF_SECRETS1
 
+	[ $DEBUG -gt 2 ] && debug_cat "$LSECRETS_FILE"	
+
 	# create the /etc/ppp/resolv.conf file???
 	# See if our provider & password are in the secrets file..if not, add it.
 	if [ $(cat "$LSECRETS_FILE" | grep -E "^.*${LCWA_PPPOE_PROVIDER}.*${LCWA_PPPOE_PASSWORD}.*$") -lt 1 ]; then
 		echo "\"${LCWA_PPPOE_PROVIDER}\" \"${LCWA_PPPOE_PROVIDER}\" \"${LCWA_PPPOE_PASSWORD}\"" >>"$LSECRETS_FILE"
 	fi
 	
+	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 	
 }
 
@@ -543,8 +551,9 @@ lcwa_pppoe_connect_create(){
 		[ $TEST -lt 1 ] && chmod 0644 "$LPPPOE_SERVICE_FILE"
 	fi
 	
-	[ $DEBUG -gt 0 ] && debug_cat "$LPPPOE_SERVICE_FILE"	
-	[ $DEBUG -gt 0 ] && debug_pause "${FUNCNAME}: ${LINENO}"
+	[ $DEBUG -gt 2 ] && debug_cat "$LPPPOE_SERVICE_FILE"	
+
+	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 	
 }
 
@@ -763,6 +772,9 @@ do
 		-v|--verbose)			# Increase message output.
 			((VERBOSE+=1))
 			;;
+		-f|--force)				# Tests script logic without performing actions.
+			((FORCE+=1))
+			;;
 		-t|--test)				# Tests script logic without performing actions.
 			((TEST+=1))
 			;;
@@ -803,6 +815,7 @@ do
 			;;
 		--pppoe)	# ='ACCOUNT:PASSWORD' Forces install of the PPPoE connect service. Ex: --pppoe=account_name:password
 			shift
+			PPPOE_INSTALL=1
 			LCWA_PPPOE_INSTALL=1
 			LCWA_PPPOE_PROVIDER="$( echo "$1" | awk -F: '{ print $1 }')"
 			LCWA_PPPOE_PASSWORD="$( echo "$1" | awk -F: '{ print $2 }')"
@@ -834,8 +847,12 @@ if [ ! -z "$LCWA_ENVFILE" ]; then
 	#~ env_file_read "$INST_SERVICE_NAME"
 else
 	env_vars_defaults_get
-	# Write the env-file if it doesn't exist..
-	[ ! -f "$LCWA_ENVFILE" ] && env_file_create "$LCWA_SERVICE" $(env_vars_name)	
+	# Write the env-file if forcing or if it doesn't exist..
+	if [ $FORCE -gt 1 ] || [ ! -f "$LCWA_ENVFILE" ]; then
+		debug_echo "CREATING ${LCWA_SERVICE} env file"
+		env_file_create "$LCWA_SERVICE" $(env_vars_name)
+		[ $DEBUG -gt 0 ] && env_file_show "$LCWA_SERVICE"
+	fi
 fi
 
 if [ $DEBUG -gt 0 ]; then
@@ -863,6 +880,7 @@ if [ $DEBUG -gt 0 ]; then
 	error_echo "        LCWA_LOGDIR == ${LCWA_LOGDIR}"
 	error_echo "    LCWA_REPO_LOCAL == ${LCWA_REPO_LOCAL}"
 	error_echo "=========================================="
+	error_echo "           NO_PPPOE == ${NO_PPPOE}"
 	error_echo " LCWA_PPPOE_INSTALL == ${LCWA_PPPOE_INSTALL}"
 	error_echo "LCWA_PPPOE_PROVIDER == ${LCWA_PPPOE_PROVIDER}"
 	error_echo "LCWA_PPPOE_PASSWORD == ${LCWA_PPPOE_PASSWORD}"

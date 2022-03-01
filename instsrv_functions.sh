@@ -4,7 +4,7 @@
 # Bash include script for generically installing services on upstart, systemd & sysv systems
 # 20220207 -- Gordon Harris
 ######################################################################################################
-INCSCRIPT_VERSION=20220226.102815
+INCSCRIPT_VERSION=20220301.083433
 SCRIPTNAME=$(basename "$0")
 
 # Get the underlying user...i.e. who called sudo..
@@ -318,6 +318,7 @@ debug_cat(){
 		cat "$LFILE" 1>&2;
 		error_echo '================================================================================='
 		error_echo ' '
+		[ $DEBUG -gt 1 ] && [ $NO_PAUSE -lt 1 ] && pause 'Press Enter to continue, or ctrl-c to abort..'
 	fi
 }
 
@@ -1019,21 +1020,28 @@ env_file_read(){
 # env_file_show() Show the var values in the env file..
 ######################################################################################################
 env_file_show(){
-	local LINST_ENVFILE=
+	local LINST_ENVFILE="${1:-${INST_NAME}}"
 	local LVAR=
 
-	if [ $IS_DEBIAN -gt 0 ]; then
-		LINST_ENVFILE="/etc/default/${INST_NAME}"
-	else
-		LINST_ENVFILE="/etc/sysconfig/${INST_NAME}"
+	# if LINST_ENVFILE is NOT a fully qualified pathname..
+	if [ $(echo "$LINST_ENVFILE" | grep -c '/') -lt 1 ]; then
+		if [ $IS_DEBIAN -gt 0 ]; then
+			LINST_ENVFILE="/etc/default/${LINST_ENVFILE}"
+		else
+			LINST_ENVFILE="/etc/sysconfig/${LINST_ENVFILE}"
+		fi
 	fi
 
-	. "$LINST_ENVFILE"
+	#~ . "$LINST_ENVFILE"
+	
+	#~ for LVAR in $(cat "$LINST_ENVFILE" | grep -E '^[^# ].*=.*$' | sed -n -e 's/^\([^=]*\).*$/\1/p' | xargs)
+	#~ do
+		#~ echo "${LVAR}=\"${!LVAR}\""
+	#~ done
 
-	for LVAR in $(cat "$LINST_ENVFILE" | grep -E '^[^# ].*=.*$' | sed -n -e 's/^\([^=]*\).*$/\1/p' | xargs)
-	do
-		echo "${LVAR}=\"${!LVAR}\""
-	done
+	cat "$LINST_ENVFILE"
+
+
 }
 
 ######################################################################################################

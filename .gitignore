@@ -12,3 +12,7 @@ test_bins/
 
 scripts/makelinks.sh
 
+scripts/lcwa-speed
+
+/lcwa-speed
+
