@@ -4,7 +4,7 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 ######################################################################################################
-SCRIPT_VERSION=20220228.210920
+SCRIPT_VERSION=20220301.220625
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -170,8 +170,8 @@ apt_update(){
 	local SZCACHE_AGE="$(echo "scale=2; (${CACHE_AGE} / 60 / 60)" | bc) hours"
 	local LFIX_MISSING=
 
-	if [ $FORCE -gt 0 ] || [ $CACHE_AGE -gt $CACHE_AGE ]; then
-		[ $CACHE_AGE -gt $CACHE_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date.  Updating apt-get package cacahe.."
+	if [ $FORCE -gt 0 ] || [ $CACHE_AGE -gt $MAX_AGE ]; then
+		[ $CACHE_AGE -gt $MAX_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date. Updating apt-get package cacahe.." || error_echo "Updating apt-get package cacahe.."
 		[ $FORCE -gt 1 ] && LFIX_MISSING='--fix-missing'
 		[ $DEBUG -gt 0 ] && apt-get update "$LFIX_MISSING" || apt-get -qq update "$LFIX_MISSING"
 	else

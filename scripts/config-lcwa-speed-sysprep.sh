@@ -4,7 +4,7 @@
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
 ######################################################################################################
-SCRIPT_VERSION=20220228.201750
+SCRIPT_VERSION=20220301.223530
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -40,6 +40,7 @@ QUIET=0
 VERBOSE=0
 FORCE=0
 TEST=0
+NEW_HOSTNAME=
 UNINSTALL=0
 
 INST_NAME='lcwa-speed'
@@ -55,10 +56,12 @@ apt_update(){
 	local NOW_DATE=$(date --utc '+%s')
 	local CACHE_AGE=$(($NOW_DATE - $CACHE_DATE))
 	local SZCACHE_AGE="$(echo "scale=2; (${CACHE_AGE} / 60 / 60)" | bc) hours"
+	local LFIX_MISSING=
 
-	if [ $FORCE -gt 0 ] || [ $CACHE_AGE -gt $CACHE_AGE ]; then
-		[ $CACHE_AGE -gt $CACHE_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date.  Updating apt-get package cacahe.."
-		[ $DEBUG -gt 0 ] && apt-update || apt-get -qq update
+	if [ $FORCE -gt 0 ] || [ $CACHE_AGE -gt $MAX_AGE ]; then
+		[ $CACHE_AGE -gt $MAX_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date.  Updating apt-get package cacahe.."
+		[ $FORCE -gt 1 ] && LFIX_MISSING='--fix-missing'
+		[ $DEBUG -gt 0 ] && apt-get update "$LFIX_MISSING" || apt-get -qq update "$LFIX_MISSING"
 	else
 		[ $VERBOSE -gt 0 ] && error_echo  "Local apt cache is up to date as of ${SZCACHE_AGE} ago."
 	fi
@@ -228,7 +231,8 @@ hostname_change(){
 		grep -i "$LNEWHOSTNAME" "$LHOSTSFILE"
 	fi
 	
-	if [ "$(hostnamectl status | sed -n -e 's/^.*hostname: \([[:alpha:]]*\)$/\1/p')" != "$LNEWHOSTNAME" ]; then
+	#~ if [ "$(hostnamectl status | sed -n -e 's/^.*hostname: \([[:alpha:]]*\)$/\1/p')" != "$LNEWHOSTNAME" ]; then
+	if [ "$(hostname)" != "$LNEWHOSTNAME" ]; then
 		error_echo "${FUNCNAME} error: Could not change hostname to ${LNEWHOSTNAME}."
 		LRET=1
 	else
@@ -245,9 +249,23 @@ hostname_change(){
 hostname_check(){
 	debug_echo "${FUNCNAME}( $@ )"
 
+	local LNEWNAME="$1"
 	local LOLDNAME="$(hostname)"
-	local LNEWNAME=
 	local LRET=1
+
+	if [ ! -z "$LNEWNAME" ]; then
+		[ $QUIET -lt 1 ] && error_echo "Checking ${LNEWNAME} for hostname compatibility.."
+
+		if [ "$(echo "$LNEWNAME" | grep -c -E '^lc[0-9]{2}.*$')" -gt 0 ]; then
+			LNEWNAME="$(echo "$LNEWNAME" | sed -e 's/^lc/LC/')"
+		fi
+		
+		if [ "$(echo "$LNEWNAME" | grep -c -E '^LC[0-9]{2}.*$')" -gt 0 ]; then
+			[ $QUIET -lt 1 ] && error_echo "Changing hostname from ${LOLDNAME} to ${LNEWNAME}.."
+			hostname_change "$LOLDNAME" "$LNEWNAME"
+			return $?
+		fi
+	fi
 
 	# Is our hostname OK??
 	[ $QUIET -lt 1 ] && error_echo "Checking ${LOLDNAME} for hostname compatibility.."
@@ -701,8 +719,9 @@ verbose,
 test,
 force,
 uninstall,remove,
-inst-name,
-service-name,
+hostname:,
+inst-name:,
+service-name:,
 env-file:"
 
 # Remove line-feeds..
@@ -742,6 +761,10 @@ do
 		-t|--test)			# Tests script logic without performing actions.
 			((TEST+=1))
 			;;
+		--hostname)		#=NEWHOSTNAME -- change system hostname
+			shift
+			NEW_HOSTNAME="$1"
+			;;
 		-r|--uninstall|--remove)	# Removes the 'admin' account. Doesn't uninstall basic utilities.
 			UNINSTALL=1
 			;;
@@ -771,7 +794,7 @@ systemd_set_tz_to_local
 
 ####################################################################
 # Check our hostname, change to LC99Speedbox by default
-hostname_check
+hostname_check "$NEW_HOSTNAME"
 
 ####################################################################
 # Install missing basic utilities

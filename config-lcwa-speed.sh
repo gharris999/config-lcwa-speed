@@ -4,7 +4,7 @@
 # Bash script for installing Andi Klein's Python LCWA PPPoE Speedtest Logger
 # as a service on systemd systems
 ######################################################################################################
-SCRIPT_VERSION=20220228.210640
+SCRIPT_VERSION=20220301.223241
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPTNAME=$(basename $0)
@@ -285,6 +285,7 @@ supbranch:,
 private,
 public,
 remove,uninstall,
+hostname:,
 inst-name:,
 service-name:,
 pppoe::,
@@ -334,6 +335,10 @@ while [ $# -gt 0 ]; do
 			;;
 		--no-pause)		# Inhibits banner pause
 			NO_PAUSE=1
+			;;
+		--hostname)
+			shift
+			PREP_OPTS="${PREP_OPTS} --hostname=${1}"
 			;;
 		--private)		# Configures the system firewall so that ports 22, 68 & 5201 are only open on  this subnet
 			FRWL_OPTS="${FRWL_OPTS} ${1}"
