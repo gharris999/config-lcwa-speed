@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220301.084412
+SCRIPT_VERSION=20220302.095344
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -247,7 +247,7 @@ lcwa_speed_update_timer_create(){
 	## systemd service unit file
 
 	[Unit]
-	Description=Updates the ${LCWA_SERVICE} service.
+	Description=${LCWA_SERVICE} service nightly update.
 	Wants=${LUPDATE_TIMER_NAME}
 
 	[Service]

@@ -2,7 +2,7 @@
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20220227.145818
+SCRIPT_VERSION=20220302.083149
 
 INST_NAME='lcwa-speed'
 SERVICE_NAME=
@@ -157,7 +157,7 @@ disp_help(){
 	error_echo  -e "\n${LSCRIPT_NAME}: ${LDESCRIPTION}\n"
 	error_echo -e "Syntax: ${LSCRIPT_NAME} ${LEXTRA_ARGS}\n"
 	error_echo "            Optional parameters:"
-	# See: https://gist.github.com/sv99/6852cc2e2a09bd3a68ed for explaination of the sed newling replacement
+	# See: https://gist.github.com/sv99/6852cc2e2a09bd3a68ed for explaination of the sed newline replacement
 	cat "$(readlink -f "$0")" | grep -E '^\s+-' | grep -v -- '--)' | sed -e 's/)//' -e 's/#/\n\t\t\t\t#/' | fmt -t -s | sed ':a;N;$!ba;s/\n\s\+\(#\)/\t\1/g' 1>&2
 	error_echo ' '
 }
@@ -349,7 +349,7 @@ service_start() {
 	log_msg "Starting ${LSERVICE}.."
 
 	#~ [ $TEST -lt 1 ] && systemctl start "${LSERVICE}" >/dev/null 2>&1
-	[ $TEST -lt 1 ] && systemctl start "${LSERVICE}" >/dev/null 2>&1
+	[ $TEST -lt 1 ] && systemctl restart "${LSERVICE}" >/dev/null 2>&1
 	
 	service_status "$LSERVICE"
 
@@ -629,6 +629,9 @@ clustercontrol_update(){
 		log_msg "Error: Could not validate merged json data in ${LLCWA_CONFFILE}."
 		return 1
 	fi
+	
+	# Make sure our ClusterControl runmode is set to "Both"
+	
 
 	log_msg "ClusterControl update of ${LLCWA_CONFFILE} complete."
 	

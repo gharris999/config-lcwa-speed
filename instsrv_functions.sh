@@ -4,7 +4,7 @@
 # Bash include script for generically installing services on upstart, systemd & sysv systems
 # 20220207 -- Gordon Harris
 ######################################################################################################
-INCSCRIPT_VERSION=20220301.083433
+INCSCRIPT_VERSION=20220304.073337
 SCRIPTNAME=$(basename "$0")
 
 # Get the underlying user...i.e. who called sudo..
@@ -310,10 +310,11 @@ debug_pause(){
 debug_cat(){
 	[ $DEBUG -lt 1 ] && return
 	local LFILE="$1"
+	local LMSG="$2"
 	if [ -f "$LFILE" ]; then
 		error_echo ' '
 		error_echo '================================================================================='
-		error_echo "${LFILE} contents:"
+		error_echo "${LMSG}${LFILE} contents:"
 		error_echo '================================================================================='
 		cat "$LFILE" 1>&2;
 		error_echo '================================================================================='

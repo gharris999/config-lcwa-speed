@@ -3,15 +3,12 @@
 get-updates.sh
 
 configs/
-
 default/
-
 rpi/
-
 test_bins/
+src/
 
 scripts/makelinks.sh
-
 scripts/lcwa-speed
 scripts/lcwa-speed.org
 scripts/lcwa-speed.bak

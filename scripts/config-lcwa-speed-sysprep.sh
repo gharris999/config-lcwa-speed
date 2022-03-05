@@ -4,7 +4,7 @@
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
 ######################################################################################################
-SCRIPT_VERSION=20220301.223530
+SCRIPT_VERSION=20220302.084925
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -40,6 +40,7 @@ QUIET=0
 VERBOSE=0
 FORCE=0
 TEST=0
+NO_CHANGE_HOSTNAME=0
 NEW_HOSTNAME=
 UNINSTALL=0
 
@@ -719,6 +720,7 @@ verbose,
 test,
 force,
 uninstall,remove,
+no-hostname,
 hostname:,
 inst-name:,
 service-name:,
@@ -761,6 +763,9 @@ do
 		-t|--test)			# Tests script logic without performing actions.
 			((TEST+=1))
 			;;
+		--no-hostname)
+			NO_CHANGE_HOSTNAME=1
+			;;
 		--hostname)		#=NEWHOSTNAME -- change system hostname
 			shift
 			NEW_HOSTNAME="$1"
@@ -794,7 +799,7 @@ systemd_set_tz_to_local
 
 ####################################################################
 # Check our hostname, change to LC99Speedbox by default
-hostname_check "$NEW_HOSTNAME"
+[ $NO_CHANGE_HOSTNAME -lt 1 ] && hostname_check "$NEW_HOSTNAME"
 
 ####################################################################
 # Install missing basic utilities
