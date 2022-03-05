@@ -2,6 +2,7 @@
 
 get-updates.sh
 
+config/
 configs/
 default/
 rpi/
