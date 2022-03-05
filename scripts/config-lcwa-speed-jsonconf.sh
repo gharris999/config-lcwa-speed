@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script creating the config.json file required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 ######################################################################################################
-SCRIPT_VERSION=20220304.201956
+SCRIPT_VERSION=20220305.112242
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -315,19 +315,12 @@ clustercontrol_update(){
 	fi
 	
 	debug_cat "$LLCWA_CONFFILE" "Done merging ClusterControl from ${LREPO_CONFFILE} to ${LLCWA_CONFFILE}: "
-	
 
 	# Make modifications to the ClusterControl blocks
 	#	Make all runmodes "Both"
-	
 	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to runmode=\"Both\""
-	
-	for LHOSTNAME in LC{01..24}
-	do
-		json_modify "$LLCWA_CONFFILE" ".ClusterControl.${LHOSTNAME}.runmode=\"Both\""
-		LRET=$?
-		[ $LRET -gt 0 ] && break
-	done
+	json_modify "$LLCWA_CONFFILE" '.ClusterControl[].runmode |="Both"'
+	LRET=$?
 	
 	if [ $LRET -gt 0 ]; then
 		error_echo "${FUNCNAME}() Error: Could not modify ${LLCWA_CONFFILE} ClusterControl keys runmode value."
@@ -340,12 +333,8 @@ clustercontrol_update(){
 	
 	#	Make all iperf_duration "10"
 	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to nondefault.iperf_duration=\"10\""
-	for LHOSTNAME in LC{01..24}
-	do
-		json_modify "$LLCWA_CONFFILE" ".ClusterControl.${LHOSTNAME}.nondefault.iperf_duration=10"
-		LRET=$?
-		[ $LRET -gt 0 ] && break
-	done
+	json_modify "$LLCWA_CONFFILE" '.ClusterControl[].nondefault.iperf_duration |=10'
+	LRET=$?
 	
 	if [ $LRET -gt 0 ]; then
 		error_echo "${FUNCNAME}() Error: Could not modify ${LLCWA_CONFFILE} ClusterControl keys .nondefault.iperf_duration value."
@@ -355,7 +344,6 @@ clustercontrol_update(){
 	else 
 		debug_cat "$LLCWA_CONFFILE" "Done fixing ${LLCWA_CONFFILE} ClusterControl keys nondefault.iperf_duration=\"10\": "
 	fi
-	
 	
 	# Create a ClusterControl block for ourselves
 	
