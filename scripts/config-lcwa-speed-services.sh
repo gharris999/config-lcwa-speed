@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220306.184007
+SCRIPT_VERSION=20220306.213127
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -46,8 +46,6 @@ UPDATE=0
 ENABLE=1
 DISABLE=0
 NO_START=0
-NO_PPPOE=0
-PPPOE_INSTALL=0
 
 ACTION=
 
@@ -563,16 +561,6 @@ do
 			INST_SERVICE_NAME="$1"
 			LCWA_SERVICE="$(basename "$INST_SERVICE_NAME")"
 			;;
-		#~ --no-pppoe)			# Prevent pppoe-connect service from being installed.
-			#~ NO_PPPOE=1
-			#~ ;;
-		#~ --pppoe)	# ='ACCOUNT:PASSWORD' Forces install of the PPPoE connect service. Ex: --pppoe=account_name:password
-			#~ shift
-			#~ PPPOE_INSTALL=1
-			#~ LCWA_PPPOE_INSTALL=1
-			#~ LCWA_PPPOE_PROVIDER="$( echo "$1" | awk -F: '{ print $1 }')"
-			#~ LCWA_PPPOE_PASSWORD="$( echo "$1" | awk -F: '{ print $2 }')"
-			#~ ;;
 		--env-file)				# =NAME -- Read a specific env file to get the locations for the install.
 			shift
 			LCWA_ENVFILE="$1"
@@ -633,11 +621,6 @@ if [ $DEBUG -gt 0 ]; then
 	error_echo "        LCWA_LOGDIR == ${LCWA_LOGDIR}"
 	error_echo "    LCWA_REPO_LOCAL == ${LCWA_REPO_LOCAL}"
 	error_echo "=========================================="
-	#~ error_echo "           NO_PPPOE == ${NO_PPPOE}"
-	#~ error_echo " LCWA_PPPOE_INSTALL == ${LCWA_PPPOE_INSTALL}"
-	#~ error_echo "LCWA_PPPOE_PROVIDER == ${LCWA_PPPOE_PROVIDER}"
-	#~ error_echo "LCWA_PPPOE_PASSWORD == ${LCWA_PPPOE_PASSWORD}"
-	#~ error_echo "=========================================="
 	error_echo "               HOME == ${HOME}"
 	error_echo "=========================================="
 	debug_pause "Press any key to continue.."
@@ -693,16 +676,6 @@ else
 	
 	# Create & enable the lcwa-speed-update.service & timer
 	lcwa_speed_update_timer_create
-	
-	# Detect if a ppp net interface is configured & create keep-alive timers
-	#~ if [ $NO_PPPOE -lt 1 ]; then
-		#~ if [ $LCWA_PPPOE_INSTALL -gt 0 ] || ppp_detect || ppp_link_is_up; then
-			#~ # Create a /etc/ppp/peers/provider file
-			#~ lcwa_pppoe_provider_create
-			#~ # Create the pppoe-connect.service
-			#~ lcwa_pppoe_connect_create
-		#~ fi
-	#~ fi
 	
 	# Get rid of old crontab entries
 	crontab_entry_remove

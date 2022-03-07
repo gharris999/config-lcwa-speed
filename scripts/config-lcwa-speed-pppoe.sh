@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220306.190748
+SCRIPT_VERSION=20220306.213127
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -654,9 +654,6 @@ else
 		echo "PROVIDER=${INST_PPPOE_PROVIDER}" >"$INST_NAME_ENVFILE"
 	fi
 	
-	# Clean out possible chkppp.sh entries from the root crontab only if forcing..
-	[ $FORCE -gt 0 ] && crontab_clean
-
 	systemd_unit_stop "$INST_NAME_SERVICE"
 	systemd_unit_disable "$INST_NAME_SERVICE"
 
@@ -667,6 +664,9 @@ else
 	pppoe_connect_service_create "$INST_NAME_SERVICE" "$INST_PPPOE_PROVIDER" "$INST_NAME_ENVFILE" || error_exit "Could not create ${INST_NAME} service file. Exiting."
 	
 	systemd_unit_enable "$INST_NAME_SERVICE"
+	
+	# Remove any old chkppp.sh reference in crontab
+	crontab_clean
 	
 	systemctl daemon-reload
 	systemctl reset-failed
