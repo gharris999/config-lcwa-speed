@@ -704,8 +704,6 @@ ookla_speedtest_install(){
 		
 	fi
 	
-	#~ [ $LRET -eq 0 ] && ookla_license_install "$LINST_USER" && LRET=$? || LRET=$?
-	
 	[ $QUIET -lt 1 ] && error_echo "Ookla speedtest installation complete."
 
 	debug_pause "${LINENO} -- ${FUNCNAME}: returning ${LRET}"
@@ -1209,7 +1207,6 @@ if [ $LICENSE_ONLY -gt 0 ]; then
 	exit $?
 fi
 
-
 # No package manager install available for macOS
 [ $IS_MAC -gt 0 ] && DIRECT=1
 
@@ -1241,11 +1238,6 @@ if [ $UPDATE -gt 0 ]; then
 		
 	fi
 fi
-
-#~ if [ $LICENSE_ONLY -gt 0 ]; then
-	#~ ookla_license_install "$INST_USER" "$INST_LICENSE_FILE"
-	#~ exit $?
-#~ fi
 
 # Display our banner and then pause..
 [ $NO_BANNER -lt 1 ] && banner_pause

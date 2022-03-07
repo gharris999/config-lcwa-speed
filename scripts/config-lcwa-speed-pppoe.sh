@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220306.213127
+SCRIPT_VERSION=20220307.142836
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -46,7 +46,6 @@ INST_ENVFILE_LOCK=0
 
 INST_NAME='pppoe-connect'
 INST_NAME_SERVICE="${INST_NAME}.service"
-[ $IS_DEBIAN -gt 0 ] && INST_NAME_ENVFILE="/etc/default/${INST_NAME}" || INST_NAME_ENVFILE="/etc/sysconfig/${INST_NAME}"
 INST_PROD="PPPoE Connection Service"
 INST_DESC="$INST_DESC"
 
@@ -54,6 +53,7 @@ INST_PPPOE_INSTALL=
 INST_PPPOE_PROVIDER=
 INST_PPPOE_PASSWORD=
 INST_NAME_ENVFILE=
+[ $IS_DEBIAN -gt 0 ] && INST_NAME_ENVFILE="/etc/default/${INST_NAME}" || INST_NAME_ENVFILE="/etc/sysconfig/${INST_NAME}"
 LCWA_ENVFILE=
 
 NEEDSUSER=0
@@ -77,7 +77,7 @@ ppp_pkg_install(){
 		local LFIX_MISSING=
 
 		if [ $FORCE -gt 0 ] || [ $CACHE_AGE -gt $MAX_AGE ]; then
-			[ $CACHE_AGE -gt $MAX_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date. Updating apt-get package cacahe.." || error_echo "Updating apt-get package cacahe.."
+			[ $CACHE_AGE -gt $MAX_AGE ] && [ $VERBOSE -gt 0 ] && error_echo "Local cache is out of date. Updating apt-get package cache.." || error_echo "Updating apt-get package cache.."
 			[ $FORCE -gt 1 ] && LFIX_MISSING='--fix-missing'
 			[ $DEBUG -gt 0 ] && apt-get "$LFIX_MISSING" update  || apt-get -qq "$LFIX_MISSING" update 
 		else
