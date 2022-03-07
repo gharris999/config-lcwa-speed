@@ -4,7 +4,7 @@
 # Bash include script for generically installing services on upstart, systemd & sysv systems
 # 20220207 -- Gordon Harris
 ######################################################################################################
-INCSCRIPT_VERSION=20220306.190515
+INCSCRIPT_VERSION=20220307.145818
 SCRIPTNAME=$(basename "$0")
 
 # Get the underlying user...i.e. who called sudo..
@@ -3942,7 +3942,7 @@ systemd_unit_file_create(){
 	
 	# Is the 1st string in LUNIT an executable? If so, then LUNIT must be inferred..
 	#~ if [ ${LUNIT:0:1} = '/' ]
-	if [ -x $(echo "$LUNIT" | awk '{ print $1 }') ]; then
+	if [ -x $(echo "$LUNIT" | awk '{ print $1 }') ] || [ "${LUNIT:0:1}" = '$' ] || [ "${LUNIT:0:1}" = '-' ]; then
 		LUNIT="$INST_NAME"
 		LEXEC_ARGS="$@"
 	fi
