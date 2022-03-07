@@ -704,7 +704,7 @@ ookla_speedtest_install(){
 		
 	fi
 	
-	[ $LRET -eq 0 ] && ookla_license_install "$LINST_USER" && LRET=$? || LRET=$?
+	#~ [ $LRET -eq 0 ] && ookla_license_install "$LINST_USER" && LRET=$? || LRET=$?
 	
 	[ $QUIET -lt 1 ] && error_echo "Ookla speedtest installation complete."
 
@@ -750,10 +750,14 @@ ookla_license_has(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_USER="$1"
 	local LHOME_DIR=
-	local LLICENSE_FILE=
+	local LLICENSE_FILE="$2"
 	local LRET=1
-
-	if [ -z "$LINST_USER" ]; then
+	
+	# Simple minded immediate check for a valid licence file..
+	if [ ! -z "$LLICENSE_FILE" ] && [ -f "$LLICENSE_FILE" ] && [ $(grep -c 'LicenseAccepted' "$LLICENSE_FILE") -gt 0 ]; then
+		[ $QUIET -lt 1 ] && error_echo "Ookla license file ${LLICENSE_FILE} exists and is VALID"
+		LRET=0
+	elif [ -z "$LINST_USER" ]; then
 		# If no user, get the user who called sudo..
 		LINST_USER="$(sudo_user_get)"
 		LHOME_DIR="$(user_home_get "$LINST_USER")"
@@ -793,7 +797,7 @@ ookla_license_install(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_USER="$1"
 	local LINST_GROUP=
-	local LHOME_DIR=
+	local LHOME_DIR="$2"
 	local LLICENSE_DIR=
 	local LLICENSE_FILE=
 	local LROOT_LICENSE_FILE="${HOME}/.config/ookla/speedtest-cli.json"
@@ -813,10 +817,15 @@ ookla_license_install(){
 		LINST_USER="$(sudo_user_get)"
 		LHOME_DIR="$(user_home_get "$LINST_USER")"
 		LINST_METHOD=1
+	elif [ ! -z "$LHOME_DIR" ] && [ -d "$LHOME_DIR" ]; then
+		LLICENSE_FILE="${LHOME_DIR}/.config/ookla/speedtest-cli.json"
+		LLICENSE_DIR="$(dirname "$LLICENSE_FILE")"
+		is_user "$LINST_USER" || LINST_USER="$(stat -c '%U' "$LHOME_DIR")"
+		LINST_METHOD=2
 	elif ( is_user "$LINST_USER" ); then
 		# has a user, may be root..
 		LHOME_DIR="$(user_home_get "$LINST_USER")"
-		LINST_METHOD=2
+		LINST_METHOD=3
 	elif [ "$(echo "$LINST_USER" | grep -c '/')" -gt 0 ]; then
 		# not a user, is a pathname like: /home/pi/.config/ookla/speedtest-cli.json
 		# warning: doesn't check for a valad path..
@@ -825,11 +834,11 @@ ookla_license_install(){
 		LLICENSE_DIR="$(dirname "$LLICENSE_FILE")"
 		LHOME_DIR="$(echo "$LLICENSE_FILE" | sed -e 's#^\(.*\)/\.config.*$#\1#')"
 		echo "$HOME_DIR" | sed -n -e 's#^/home/\(.*\).*$#\1#p'
-		LINST_METHOD=3
+		LINST_METHOD=4
 	else
 		# punt!
 		LHOME_DIR="$HOME"
-		LINST_METHOD=4
+		LINST_METHOD=5
 	fi
 	
 	# Get the user if we don't already know it..
@@ -895,26 +904,34 @@ ookla_license_install(){
 	[ $QUIET -lt 1 ] && error_echo "Running ${LOOKLA} to generate a license file at ${LLICENSE_FILE}"
 	
 	[ $DEBUG -gt 0 ] && echo sudo HOME="$LHOME_DIR" -u "$LINST_USER" yes \| "$LOOKLA" --progress=no --format=csv --server-id=18002
+	debug_pause "${LINENO} -- ${FUNCNAME}()"
 
-	# speedtest doesn't seem to respect the HOME variable..instead 
-	[ $TEST -lt 1 ] && sudo HOME="$LHOME_DIR" -u "$LINST_USER" yes | "$LOOKLA" --progress=no --format=csv --server-id=18002
+	# Make 3 attempts at installing the licence file..
+	for n in 1 2 3
+	do
+		# speedtest doesn't seem to respect the HOME variable..instead 
+		[ $TEST -lt 1 ] && sudo HOME="$LHOME_DIR" -u "$LINST_USER" yes | "$LOOKLA" --progress=no --format=csv --server-id=18002
+		
+		# If the license file got installed to root..
+		if [ ! -f "$LLICENSE_FILE" ] && [ -f "$LROOT_LICENSE_FILE" ]; then
+			[ $QUIET -lt 1 ] && error_echo "Copying ${LROOT_LICENSE_FILE} to ${LLICENSE_FILE}.."
+			[ $TEST -lt 1 ] && cp -p "$LROOT_LICENSE_FILE" "$LLICENSE_FILE"
+		fi
+		
+		if [ ! -f "$LLICENSE_FILE" ]; then
+			LRET=1
+			error_echo "${FUNCNAME}() Error: Olkla license file ${LLICENSE_FILE} was NOT installed."
+		else
+			[ $TEST -lt 1 ] && chown -R "${LINST_USER}:${LINST_GROUP}" "$LLICENSE_DIR"
+			[ $QUIET -lt 1 ] && error_echo ' '
+			[ $QUIET -lt 1 ] && error_echo "Ookla Licence file ${LLICENSE_FILE} successfully generated."
+			[ $QUIET -lt 1 ] && error_echo ' '
+			LRET=0
+		fi
+		
+		[ $LRET -lt 1 ] && break
 	
-	# If the license file got installed to root..
-	if [ ! -f "$LLICENSE_FILE" ] && [ -f "$LROOT_LICENSE_FILE" ]; then
-		[ $QUIET -lt 1 ] && error_echo "Copying ${LROOT_LICENSE_FILE} to ${LLICENSE_FILE}.."
-		[ $TEST -lt 1 ] && cp -p "$LROOT_LICENSE_FILE" "$LLICENSE_FILE"
-	fi
-	
-	if [ ! -f "$LLICENSE_FILE" ]; then
-		LRET=1
-		error_echo "${FUNCNAME}() Error: Olkla license file ${LLICENSE_FILE} was NOT installed."
-	else
-		[ $TEST -lt 1 ] && chown -R "${LINST_USER}:${LINST_GROUP}" "$LLICENSE_DIR"
-		[ $QUIET -lt 1 ] && error_echo ' '
-		[ $QUIET -lt 1 ] && error_echo "Ookla Licence file ${LLICENSE_FILE} successfully generated."
-		[ $QUIET -lt 1 ] && error_echo ' '
-		LRET=0
-	fi
+	done
 	
 	[ -f "$LLICENSE_FILE" ] && debug_cat "$LLICENSE_FILE"
 	debug_pause "${FUNCNAME}: returning ${LRET}"
@@ -1188,9 +1205,10 @@ if [ ! -z "$INST_USER" ]; then
 fi
 
 if [ $LICENSE_ONLY -gt 0 ]; then
-	ookla_license_install "$INST_USER"
+	ookla_license_install "$INST_USER" "$INST_LICENSE_FILE"
 	exit $?
 fi
+
 
 # No package manager install available for macOS
 [ $IS_MAC -gt 0 ] && DIRECT=1
@@ -1203,6 +1221,8 @@ if [ $UPDATE -gt 0 ]; then
 	if [ -z "$CUR_VERSION" ]; then
 		UPDATE=0
 		INSTALL=1
+	#~ elif [ ! -f "$INST_LICENSE_FILE" ]; then
+		#~ INSTALL=1
 	else
 		vercomp2 "$INST_VERSION" "$CUR_VERSION"
 		case $? in
@@ -1218,8 +1238,14 @@ if [ $UPDATE -gt 0 ]; then
 				#~ INSTALL=0
 				;;
 		esac
+		
 	fi
 fi
+
+#~ if [ $LICENSE_ONLY -gt 0 ]; then
+	#~ ookla_license_install "$INST_USER" "$INST_LICENSE_FILE"
+	#~ exit $?
+#~ fi
 
 # Display our banner and then pause..
 [ $NO_BANNER -lt 1 ] && banner_pause
@@ -1235,6 +1261,9 @@ elif [ $UPDATE -eq 1 ] && [ $INSTALL -eq 0 ]; then
 		error_echo "Ookla speedtest currently installed version ${CUR_VERSION} is newer or equal to "
 		error_echo "candidate version ${INST_VERSION}. Use --force to force a reinstall."
 	fi
+	
+	# Speedtest may be installed, but we need a licence file too!
+	ookla_license_has "$INST_USER" "$INST_LICENSE_FILE" || ookla_license_install "$INST_USER" "$INST_LICENSE_FILE"
 
 	[ $QUIET -lt 1 ] && error_echo ' '
 	[ $QUIET -lt 1 ] && error_echo "${SCRIPT_NAME} ${PREARGS} finished."
@@ -1250,7 +1279,9 @@ if [ $INSTALL -gt 0 ]; then
 		[ $QUIET -lt 1 ] && error_echo "Installing Ookla speedtest ${INST_VERSION}"
 	fi
 	error_echo ' '
-	ookla_speedtest_install "$INST_USER" && ookla_license_install "$INST_USER"
+	ookla_speedtest_install "$INST_USER"
+	
+	ookla_license_install "$INST_USER" "$LCWA_HOMEDIR"
 
 fi
 
