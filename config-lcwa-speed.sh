@@ -4,7 +4,7 @@
 # Bash script for installing Andi Klein's Python LCWA PPPoE Speedtest Logger
 # as a service on systemd systems
 ######################################################################################################
-SCRIPT_VERSION=20220302.085109
+SCRIPT_VERSION=20220306.193601
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPTNAME=$(basename $0)
@@ -204,6 +204,7 @@ script_opts_vars_name(){
 	"REPO_OPTS" \
 	"JSON_OPTS" \
 	"SRVC_OPTS" \
+	"PPPD_OPTS" \
 	"UTIL_OPTS" \
 	"FRWL_OPTS"
 }
@@ -382,8 +383,7 @@ while [ $# -gt 0 ]; do
 			;;
 		--pppoe)	# ='ACCOUNT:PASSWORD' Forces install of the PPPoE connect service. Ex: --pppoe=account_name:password
 			shift
-			DEPS_OPTS="${DEPS_OPTS} --pppoe=${1}"
-			SRVC_OPTS="${SRVC_OPTS} --pppoe=${1}"
+			PPPD_OPTS="${PPPD_OPTS} --pppoe=${1}"
 			LCWA_PPPOE_INSTALL=1
 			LCWA_PPPOE_PROVIDER="$(echo "$1" | awk -F: '{ print $1 }')"
 			LCWA_PPPOE_PASSWORD="$(echo "$1" | awk -F: '{ print $2 }')"
@@ -434,6 +434,7 @@ if [ $UNINSTALL -gt 0 ]; then
 
 	# Stop, disable and remove the service and timer unit files
 	inst_script_execute config-lcwa-speed-services.sh $SRVC_OPTS
+	inst_script_execute config-lcwa-speed-pppoe.sh $PPPD_OPTS
 
 	# Remove our utility scripts
 	inst_script_execute config-lcwa-speed-utils.sh $UTIL_OPTS
@@ -479,6 +480,10 @@ else
 
 	# Create the service and timer unit files
 	inst_script_execute config-lcwa-speed-services.sh $SRVC_OPTS
+
+	# Create the pppoe-connect service
+	PPPD_OPTS="${PPPD_OPTS} -ddd"
+	[ $LCWA_PPPOE_INSTALL -gt 0 ] && inst_script_execute config-lcwa-speed-pppoe.sh $PPPD_OPTS
 
 	# Install our utility scripts
 	inst_script_execute config-lcwa-speed-utils.sh $UTIL_OPTS

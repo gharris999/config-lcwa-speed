@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220302.095344
+SCRIPT_VERSION=20220306.184007
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -85,7 +85,7 @@ debug_echo "Including file: ${INCLUDE_FILE}"
 . "$INCLUDE_FILE"
 
 
-systemd_uint_start(){
+systemd_unit_start(){
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	local LUNIT_FILE="/lib/systemd/system/${LUNIT}"
@@ -105,7 +105,7 @@ systemd_uint_start(){
 	return $LRET
 }
 
-systemd_uint_stop(){
+systemd_unit_stop(){
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	
@@ -115,7 +115,7 @@ systemd_uint_stop(){
 	fi
 }
 
-systemd_uint_enable(){
+systemd_unit_enable(){
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	local LUNIT_FILE="/lib/systemd/system/${LUNIT}"
@@ -130,11 +130,11 @@ systemd_uint_enable(){
 	fi
 }
 
-systemd_uint_disable(){
+systemd_unit_disable(){
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	
-	systemd_uint_stop "$LUNIT"
+	systemd_unit_stop "$LUNIT"
 	
 	if systemctl is-enabled --quiet "$LUNIT" 2>/dev/null; then
 		[ $QUIET -lt 1 ] && error_echo "Disabling ${LUNIT}.."
@@ -149,7 +149,7 @@ systemd_unit_remove(){
 	local LUNIT_FILE="/lib/systemd/system/${LUNIT}"
 	
 	if [ -f "$LUNIT_FILE" ]; then
-		systemd_uint_disable "$LUNIT"
+		systemd_unit_disable "$LUNIT"
 		[ $QUIET -lt 1 ] && error_echo "Removing ${LUNIT_FILE}.."
 		[ $TEST -lt 1 ] && rm "$LUNIT_FILE"
 	fi
@@ -213,7 +213,7 @@ lcwa_speed_unit_file_create(){
 	
 	[ $DEBUG -gt 2 ] && debug_cat "$LUNIT_FILE"
 	
-	#~ systemd_uint_enable "${LCWA_SERVICE}.service"
+	#~ systemd_unit_enable "${LCWA_SERVICE}.service"
 	
 	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 
@@ -305,265 +305,20 @@ lcwa_speed_update_timer_create(){
 	[ $DEBUG -gt 2 ] && debug_cat "$LUPDATE_TIMER_FILE"	
 
 	# Enable the timer
-	#~ systemd_uint_enable "$LUPDATE_TIMER_NAME"
+	#~ systemd_unit_enable "$LUPDATE_TIMER_NAME"
 	
 	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 	
 }
 
-ppp_detect(){
-	debug_echo "${FUNCNAME}( $@ )"
-	local LPPPOE_ACCOUNT=
 
-	if [ ! -f /etc/network/interfaces ]; then
-		return 1
-	fi
-	
-	[ $QUIET -lt 1 ] && error_echo "Checking for PPPoE interface in /etc/network/interfaces"
-	
-	LPPPOE_ACCOUNT="$(grep -E '^auto.*lcwa.*$|^auto.*provider.*$' /etc/network/interfaces | awk '{ print $2 }')"
-	
-	if [ -z "$LPPPOE_ACCOUNT" ]; then
-		[ $QUIET -lt 1 ] && error_echo "No ppp interface defined in /etc/network/interfaces"
-		return 1
-	fi
-	
-	return 0
-}
-
-ppp_link_is_up(){
-
-	[ $(ip -br a | grep -c -E '^ppp.*peer') -gt 0 ] && return 0 || return 1
-
-}
-
-iface_static_get(){
-	debug_echo "${FUNCNAME}( $@ )"
-	# Return the 1st interface that has a static ip address
-	#~ ip -4 addr show | grep -E '^\s+inet.*global' | grep -v 'ppp' | grep -m1 -v 'dynamic' | awk '{print $NF}'
-	ip -o addr show | grep -E 'inet.*172\.16\..*global' | grep -v 'ppp' | awk '{ print $2 }'
-}
-
-lcwa_pppoe_provider_create(){
-	debug_echo "${FUNCNAME}( $@ )"
-	# Get the first linked interface with a 172.16. static ip..
-	local LSTATIC_IFACE="$(iface_static_get)"
-	local LPROVIDER_DIR='/etc/ppp/peers'
-	local LPROVIDER_FILE="${LPROVIDER_DIR}/${LCWA_PPPOE_PROVIDER}"
-	# Two more tries to get an interface name.
-	[ -z "$LSTATIC_IFACE" ] && LSTATIC_IFACE="$(iface_primary_geta)"
-	[ -z "$LSTATIC_IFACE" ] && LSTATIC_IFACE="$(ls -1 '/sys/class/net' | sort | grep -m1 -v -E '^lo$')"
-	
-	if [ -z "$LSTATIC_IFACE" ]; then
-		error_echo "${SCRIPT_NAME} error: Could not find a linked network interface."
-		return 1
-	fi
-	
-	# Search for the provider name in the /etc/ppp/chap-secrets file
-	#~ LCWA_PPPOE_PROVIDER
-	#~ LCWA_PPPOE_PASSWORD
-	
-	# Note: Fedora's ppp package doesn't create the peers directory
-	[ ! -d "$LPROVIDER_DIR" ] && mkdir -p "$LPROVIDER_DIR"
-	
-	# Create the /etc/ppp/peers/provider file
-
-	[ -f "$LPROVIDER_FILE" ] && [ ! -f "${LPROVIDER_FILE}.org" ] && cp -p "$LPROVIDER_FILE" "${LPROVIDER_FILE}.org"
-	
-	[ $QUIET -lt 1 ] && error_echo "Creating ${LPROVIDER_FILE}.."
-	
-	[ $TEST -lt 1 ] && cat >"$LPROVIDER_FILE" <<-EOF_PROVIDER;
-	# $(date) -- ${LPROVIDER_FILE}
-	# Minimalistic default options file for DSL/PPPoE connections
-
-	noipdefault
-	defaultroute
-	replacedefaultroute
-	hide-password
-	#lcp-echo-interval 30
-	#lcp-echo-failure 4
-	noauth
-	persist
-	nodetach
-	#debug
-	mtu 1480
-	#persist
-	#maxfail 0
-	#holdoff 20
-	plugin rp-pppoe.so
-	nic-${LSTATIC_IFACE}
-	user "${LCWA_PPPOE_PROVIDER}"
-	usepeerdns
-	EOF_PROVIDER
-	
-	[ $DEBUG -gt 2 ] && debug_cat "$LPROVIDER_FILE"	
-
-	
-	# Create the /etc/ppp/chap-secrets
-	local LSECRETS_FILE='/etc/ppp/chap-secrets'
-
-	[ -f "$LSECRETS_FILE" ] && [ ! -f "${LSECRETS_FILE}.org" ] && cp -p "$LSECRETS_FILE" "${LSECRETS_FILE}.org"
-
-	[ $QUIET -lt 1 ] && error_echo "Creating ${LSECRETS_FILE}.."
-
-	[ $TEST -lt 1 ] && cat >"$LSECRETS_FILE" <<-EOF_SECRETS0;
-	# $(date) -- ${LSECRETS_FILE}
-	# Secrets for authentication using CHAP
-	# client	server	secret			IP addresses
-
-	"speedtest5a" "speedtest5a" "ocm68hv0"
-	"speedtest20a" "speedtest20a" "ocm68hv0"
-	"speedtest20b" "speedtest20b" "ocm68hv0"
-	"speedtest20c" "speedtest20c" "ocm68hv0"
-	"speedtest20d" "speedtest20d" "ocm68hv0"
-	"speedtest20e" "speedtest20e" "ocm68hv0"
-	"speedtest20f" "speedtest20f" "ocm68hv0"
-	"speedtest20g" "speedtest20g" "ocm68hv0"
-	
-	EOF_SECRETS0
-	
-	[ $DEBUG -gt 2 ] && debug_cat "$LSECRETS_FILE"	
-
-	
-	# See if our provider & password are in the secrets file..if not, add it.
-	if [ $(cat "$LSECRETS_FILE" | grep -E "^.*${LCWA_PPPOE_PROVIDER}.*${LCWA_PPPOE_PASSWORD}.*$") -lt 1 ]; then
-		echo "\"${LCWA_PPPOE_PROVIDER}\" \"${LCWA_PPPOE_PROVIDER}\" \"${LCWA_PPPOE_PASSWORD}\"" >>"$LSECRETS_FILE"
-	fi
-	
-	# Create the /etc/ppp/pap-secrets file
-	local LSECRETS_FILE='/etc/ppp/pap-secrets'
-	
-	[ $QUIET -lt 1 ] && error_echo "Creating ${LSECRETS_FILE}.."
-
-	[ -f "$LSECRETS_FILE" ] && [ ! -f "${LSECRETS_FILE}.org" ] && cp -p "$LSECRETS_FILE" "${LSECRETS_FILE}.org"
-	[ $TEST -lt 1 ] && cat >"$LSECRETS_FILE" <<-EOF_SECRETS1;
-	# $(date) -- ${LSECRETS_FILE}
-	# Every regular user can use PPP and has to use passwords from /etc/passwd
-	*	hostname	""	*
-
-	# UserIDs that cannot use PPP at all. Check your /etc/passwd and add any
-	# other accounts that should not be able to use pppd!
-	guest	hostname	"*"	-
-	master	hostname	"*"	-
-	root	hostname	"*"	-
-	support	hostname	"*"	-
-	stats	hostname	"*"	-
-
-	# OUTBOUND connections
-
-	# Here you should add your userid password to connect to your providers via
-	# PAP. The * means that the password is to be used for ANY host you connect
-	# to. Thus you do not have to worry about the foreign machine name. Just
-	# replace password with your password.
-	# If you have different providers with different passwords then you better
-	# remove the following line.
-
-	#	*	password
-
-	"speedtest5a" "speedtest5a" "ocm68hv0"
-	"speedtest20a" "speedtest20a" "ocm68hv0"
-	"speedtest20b" "speedtest20b" "ocm68hv0"
-	"speedtest20c" "speedtest20c" "ocm68hv0"
-	"speedtest20d" "speedtest20d" "ocm68hv0"
-	"speedtest20e" "speedtest20e" "ocm68hv0"
-	"speedtest20f" "speedtest20f" "ocm68hv0"
-	"speedtest20g" "speedtest20g" "ocm68hv0"
-
-	EOF_SECRETS1
-
-	[ $DEBUG -gt 2 ] && debug_cat "$LSECRETS_FILE"	
-
-	# create the /etc/ppp/resolv.conf file???
-	# See if our provider & password are in the secrets file..if not, add it.
-	if [ $(cat "$LSECRETS_FILE" | grep -E "^.*${LCWA_PPPOE_PROVIDER}.*${LCWA_PPPOE_PASSWORD}.*$") -lt 1 ]; then
-		echo "\"${LCWA_PPPOE_PROVIDER}\" \"${LCWA_PPPOE_PROVIDER}\" \"${LCWA_PPPOE_PASSWORD}\"" >>"$LSECRETS_FILE"
-	fi
-	
-	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
-	
-}
-
-lcwa_pppoe_connect_create(){
-	debug_echo "${FUNCNAME}( $@ )"
-	
-	# create the /lib/systemd/system/pppoe-connect.service file
-	local LPPPOE_SERVICE_NAME='pppoe-connect.service'
-	local LPPPOE_SERVICE_FILE="/lib/systemd/system/${LPPPOE_SERVICE_NAME}"
-	
-	[ $QUIET -lt 1 ] && error_echo "Creating ${LPPPOE_SERVICE_NAME} for provider ${LCWA_PPPOE_PROVIDER}.."
-
-	[ $TEST -lt 1 ] && cat >"$LPPPOE_SERVICE_FILE" <<-EOF_PPPOESRVC0;
-	# $(date) -- ${LPPPOE_SERVICE_FILE}
-	# Adapted from https://www.sherbers.de/diy-linux-router-part-3-pppoe-and-routing/
-
-	[Unit]
-	Description=PPPoE Connection Service
-	After=network-online.target
-
-	[Service]
-	Type=exec
-	EnvironmentFile=${LCWA_ENVFILE}
-	ExecStart=/usr/sbin/pppd call \$LCWA_PPPOE_PROVIDER
-	StandardOutput=append:${LCWA_LOGDIR}/pppoe-connect.log
-	StandardError=append:${LCWA_LOGDIR}/pppoe-connect-error.log
-
-	Restart=always
-	RestartSec=10s
-
-	# filesystem access
-	ProtectSystem=strict
-	ReadWritePaths=/run/
-
-	PrivateTmp=true
-	ProtectControlGroups=true
-	ProtectKernelModules=true
-	ProtectKernelTunables=true
-
-	# network
-	RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_PPPOX AF_PACKET AF_NETLINK
-
-	# misc
-	NoNewPrivileges=true
-	RestrictRealtime=true
-	MemoryDenyWriteExecute=true
-	ProtectKernelLogs=true
-	LockPersonality=true
-	ProtectHostname=true
-	RemoveIPC=true
-	RestrictSUIDSGID=true
-	RestrictNamespaces=true
-
-	# capabilities
-	CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
-	SystemCallFilter=@system-service
-	SystemCallErrorNumber=EPERM
-
-	[Install]
-	WantedBy=multi-user.target
-	
-	EOF_PPPOESRVC0
-	
-	if [ ! -f "$LPPPOE_SERVICE_FILE" ] && [ $TEST -lt 1 ]; then
-		error_echo "${FUNCNAME}( $@ ): Error -- could not create ${LPPPOE_SERVICE_FILE} file."
-		return 1
-	else
-		[ $TEST -lt 1 ] && chown root:root "$LPPPOE_SERVICE_FILE"
-		[ $TEST -lt 1 ] && chmod 0644 "$LPPPOE_SERVICE_FILE"
-	fi
-	
-	[ $DEBUG -gt 2 ] && debug_cat "$LPPPOE_SERVICE_FILE"	
-
-	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
-	
-}
 
 
 # This lists just the unit files that should be enabled / started
 units_list_names(){
 	UNITS_LIST=" \
 	${LCWA_SERVICE}.service \
-	${LCWA_SERVICE}-update.timer \
-	pppoe-connect.service"
+	${LCWA_SERVICE}-update.timer"
 	
 	echo "$UNITS_LIST" | xargs
 }
@@ -585,7 +340,7 @@ units_start(){
 	
 	for LUNIT in $(units_list_names)
 	do
-		systemd_uint_start "$LUNIT"
+		systemd_unit_start "$LUNIT"
 	done
 }
 
@@ -595,7 +350,7 @@ units_stop(){
 	
 	for LUNIT in $(units_list_names)
 	do
-		systemd_uint_stop "$LUNIT"
+		systemd_unit_stop "$LUNIT"
 	done
 }
 
@@ -607,7 +362,7 @@ units_enable(){
 	
 	for LUNIT in $(units_list_names)
 	do
-		systemd_uint_enable "$LUNIT"
+		systemd_unit_enable "$LUNIT"
 	done
 }
 
@@ -617,7 +372,7 @@ units_disable(){
 	
 	for LUNIT in $(units_list_names)
 	do
-		systemd_uint_disable "$LUNIT"
+		systemd_unit_disable "$LUNIT"
 	done
 }
 
@@ -730,8 +485,6 @@ remove,
 uninstall,
 inst-name:,
 service-name:,
-no-pppoe,
-pppoe::,
 env-file:"
 
 # Remove line-feeds..
@@ -810,16 +563,16 @@ do
 			INST_SERVICE_NAME="$1"
 			LCWA_SERVICE="$(basename "$INST_SERVICE_NAME")"
 			;;
-		--no-pppoe)			# Prevent pppoe-connect service from being installed.
-			NO_PPPOE=1
-			;;
-		--pppoe)	# ='ACCOUNT:PASSWORD' Forces install of the PPPoE connect service. Ex: --pppoe=account_name:password
-			shift
-			PPPOE_INSTALL=1
-			LCWA_PPPOE_INSTALL=1
-			LCWA_PPPOE_PROVIDER="$( echo "$1" | awk -F: '{ print $1 }')"
-			LCWA_PPPOE_PASSWORD="$( echo "$1" | awk -F: '{ print $2 }')"
-			;;
+		#~ --no-pppoe)			# Prevent pppoe-connect service from being installed.
+			#~ NO_PPPOE=1
+			#~ ;;
+		#~ --pppoe)	# ='ACCOUNT:PASSWORD' Forces install of the PPPoE connect service. Ex: --pppoe=account_name:password
+			#~ shift
+			#~ PPPOE_INSTALL=1
+			#~ LCWA_PPPOE_INSTALL=1
+			#~ LCWA_PPPOE_PROVIDER="$( echo "$1" | awk -F: '{ print $1 }')"
+			#~ LCWA_PPPOE_PASSWORD="$( echo "$1" | awk -F: '{ print $2 }')"
+			#~ ;;
 		--env-file)				# =NAME -- Read a specific env file to get the locations for the install.
 			shift
 			LCWA_ENVFILE="$1"
@@ -880,11 +633,11 @@ if [ $DEBUG -gt 0 ]; then
 	error_echo "        LCWA_LOGDIR == ${LCWA_LOGDIR}"
 	error_echo "    LCWA_REPO_LOCAL == ${LCWA_REPO_LOCAL}"
 	error_echo "=========================================="
-	error_echo "           NO_PPPOE == ${NO_PPPOE}"
-	error_echo " LCWA_PPPOE_INSTALL == ${LCWA_PPPOE_INSTALL}"
-	error_echo "LCWA_PPPOE_PROVIDER == ${LCWA_PPPOE_PROVIDER}"
-	error_echo "LCWA_PPPOE_PASSWORD == ${LCWA_PPPOE_PASSWORD}"
-	error_echo "=========================================="
+	#~ error_echo "           NO_PPPOE == ${NO_PPPOE}"
+	#~ error_echo " LCWA_PPPOE_INSTALL == ${LCWA_PPPOE_INSTALL}"
+	#~ error_echo "LCWA_PPPOE_PROVIDER == ${LCWA_PPPOE_PROVIDER}"
+	#~ error_echo "LCWA_PPPOE_PASSWORD == ${LCWA_PPPOE_PASSWORD}"
+	#~ error_echo "=========================================="
 	error_echo "               HOME == ${HOME}"
 	error_echo "=========================================="
 	debug_pause "Press any key to continue.."
@@ -942,14 +695,14 @@ else
 	lcwa_speed_update_timer_create
 	
 	# Detect if a ppp net interface is configured & create keep-alive timers
-	if [ $NO_PPPOE -lt 1 ]; then
-		if [ $LCWA_PPPOE_INSTALL -gt 0 ] || ppp_detect || ppp_link_is_up; then
-			# Create a /etc/ppp/peers/provider file
-			lcwa_pppoe_provider_create
-			# Create the pppoe-connect.service
-			lcwa_pppoe_connect_create
-		fi
-	fi
+	#~ if [ $NO_PPPOE -lt 1 ]; then
+		#~ if [ $LCWA_PPPOE_INSTALL -gt 0 ] || ppp_detect || ppp_link_is_up; then
+			#~ # Create a /etc/ppp/peers/provider file
+			#~ lcwa_pppoe_provider_create
+			#~ # Create the pppoe-connect.service
+			#~ lcwa_pppoe_connect_create
+		#~ fi
+	#~ fi
 	
 	# Get rid of old crontab entries
 	crontab_entry_remove

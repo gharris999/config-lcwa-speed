@@ -4,7 +4,7 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 ######################################################################################################
-SCRIPT_VERSION=20220301.220625
+SCRIPT_VERSION=20220306.184007
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -499,9 +499,6 @@ pkg_deps_install(){
 				${LIBFFI} \
 				at-spi2-core"
 				
-			# Add the ppp package if installing for pppoe connectivity
-			[ $LCWA_PPPOE_INSTALL -gt 0 ] && LPKG_LIST="${LPKG_LIST} ppp"
-
 			LPKG_LIST="$(echo $LPKG_LIST | xargs)"
 			
 			[ $QUIET -gt 0 ] && error_echo "Checking package list.."
@@ -545,9 +542,6 @@ pkg_deps_install(){
 				libffi-devel \
 				libffi \
 				at-spi2-core"
-				
-			# Add the ppp package if installing for pppoe connectivity
-			[ $LCWA_PPPOE_INSTALL -gt 0 ] && LPKG_LIST="${LPKG_LIST} ppp"
 				
 			LPKG_LIST="$(echo $LPKG_LIST | xargs)"
 			
@@ -850,12 +844,12 @@ do
 			INST_SERVICE_NAME="$1"
 			LCWA_SERVICE="$(basename "$INST_SERVICE_NAME")"
 			;;
-		--pppoe)	# ='ACCOUNT:PASSWORD' Forces install of the PPPoE connect service. Ex: --pppoe=account_name:password
-			shift
-			LCWA_PPPOE_INSTALL=1
-			LCWA_PPPOE_PROVIDER="$( echo "$1" | awk -F: '{ print $1 }')"
-			LCWA_PPPOE_PASSWORD="$( echo "$1" | awk -F: '{ print $2 }')"
-			;;
+		#~ --pppoe)	# ='ACCOUNT:PASSWORD' Forces install of the PPPoE connect service. Ex: --pppoe=account_name:password
+			#~ shift
+			#~ LCWA_PPPOE_INSTALL=1
+			#~ LCWA_PPPOE_PROVIDER="$( echo "$1" | awk -F: '{ print $1 }')"
+			#~ LCWA_PPPOE_PASSWORD="$( echo "$1" | awk -F: '{ print $2 }')"
+			#~ ;;
 		--env-file)			# =NAME -- Read a specific env file to get the locations for the install.
 			shift
 			LCWA_ENVFILE="$1"

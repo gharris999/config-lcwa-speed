@@ -4,7 +4,7 @@
 # Bash include script for generically installing services on upstart, systemd & sysv systems
 # 20220207 -- Gordon Harris
 ######################################################################################################
-INCSCRIPT_VERSION=20220304.073337
+INCSCRIPT_VERSION=20220306.190515
 SCRIPTNAME=$(basename "$0")
 
 # Get the underlying user...i.e. who called sudo..
@@ -310,16 +310,14 @@ debug_pause(){
 debug_cat(){
 	[ $DEBUG -lt 1 ] && return
 	local LFILE="$1"
-	local LMSG="$2"
 	if [ -f "$LFILE" ]; then
 		error_echo ' '
 		error_echo '================================================================================='
-		error_echo "${LMSG}${LFILE} contents:"
+		error_echo "${LFILE} contents:"
 		error_echo '================================================================================='
 		cat "$LFILE" 1>&2;
 		error_echo '================================================================================='
 		error_echo ' '
-		[ $DEBUG -gt 1 ] && [ $NO_PAUSE -lt 1 ] && pause 'Press Enter to continue, or ctrl-c to abort..'
 	fi
 }
 
@@ -909,7 +907,6 @@ env_file_create(){
 		else
 			LINST_ENVFILE="/etc/sysconfig/${LINST_ENVFILE}"
 		fi
-
 	fi
 	
 	# Check to see if the file has the lock flag set..
@@ -948,21 +945,36 @@ env_file_create(){
 # env_file_update() Update the service config file with new values, only changing vars that have values..
 ######################################################################################################
 env_file_update(){
-	local LINST_ENVFILE=
+	debug_echo "${FUNCNAME}( $@ )"
+	local LINST_ENVFILE="$1"
+	local LARGS=
 	local LARG=
 	local LARG_VAL=
-
-	if [ $IS_DEBIAN -gt 0 ]; then
-		LINST_ENVFILE="/etc/default/${INST_NAME}"
+	
+	# Note the $$ -- Indirection: Is variable 1 a variable NAME??  If yes, then variable 1 IS NOT our env filename..
+	if [[ -v $$LINST_ENVFILE ]]; then
+		debug_echo "${FUNCNAME}: 1st arg is a VAR name. LINST_ENVFILE == ${LINST_ENVFILE}"
+		LINST_ENVFILE="$INST_NAME"
+		LARGS="$@"
 	else
-		LINST_ENVFILE="/etc/sysconfig/${INST_NAME}"
+		debug_echo "${FUNCNAME}: 1st arg is a FILE name. LINST_ENVFILE == ${LINST_ENVFILE}"
+		LARGS="${@:2}"
 	fi
-
+	
+	# Is the name not a fully qualified path?
+	if [ $(echo "$LINST_ENVFILE" | grep -c '/') -lt 1 ]; then
+		if [ $IS_DEBIAN -gt 0 ]; then
+			LINST_ENVFILE="/etc/default/${LINST_ENVFILE}"
+		else
+			LINST_ENVFILE="/etc/sysconfig/${LINST_ENVFILE}"
+		fi
+	fi
+	
 	if [ ! -f "$LINST_ENVFILE" ]; then
 		error_exit "Could not find config file ${LINST_ENVFILE}.."
 	fi
 
-	for LARG in $@
+	for LARG in $LARGS
 	do
 		# If our (indirect reference) variable isn't empty..
 		if [ ! -z "${!LARG}" ]; then
@@ -1021,34 +1033,28 @@ env_file_read(){
 # env_file_show() Show the var values in the env file..
 ######################################################################################################
 env_file_show(){
-	local LINST_ENVFILE="${1:-${INST_NAME}}"
+	local LINST_ENVFILE=
 	local LVAR=
 
-	# if LINST_ENVFILE is NOT a fully qualified pathname..
-	if [ $(echo "$LINST_ENVFILE" | grep -c '/') -lt 1 ]; then
-		if [ $IS_DEBIAN -gt 0 ]; then
-			LINST_ENVFILE="/etc/default/${LINST_ENVFILE}"
-		else
-			LINST_ENVFILE="/etc/sysconfig/${LINST_ENVFILE}"
-		fi
+	if [ $IS_DEBIAN -gt 0 ]; then
+		LINST_ENVFILE="/etc/default/${INST_NAME}"
+	else
+		LINST_ENVFILE="/etc/sysconfig/${INST_NAME}"
 	fi
 
-	#~ . "$LINST_ENVFILE"
-	
-	#~ for LVAR in $(cat "$LINST_ENVFILE" | grep -E '^[^# ].*=.*$' | sed -n -e 's/^\([^=]*\).*$/\1/p' | xargs)
-	#~ do
-		#~ echo "${LVAR}=\"${!LVAR}\""
-	#~ done
+	. "$LINST_ENVFILE"
 
-	cat "$LINST_ENVFILE"
-
-
+	for LVAR in $(cat "$LINST_ENVFILE" | grep -E '^[^# ].*=.*$' | sed -n -e 's/^\([^=]*\).*$/\1/p' | xargs)
+	do
+		echo "${LVAR}=\"${!LVAR}\""
+	done
 }
 
 ######################################################################################################
 # env_file_remove() Delete the default env file..
 ######################################################################################################
 env_file_remove(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_ENVFILE="$1"
 
 	if [ -z "$LINST_ENVFILE" ]; then

@@ -2,12 +2,14 @@
 
 get-updates.sh
 
+bak/
 config/
 configs/
 default/
 rpi/
 test_bins/
 src/
+pppoe/
 
 scripts/makelinks.sh
 scripts/lcwa-speed
