@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220311.081350
+SCRIPT_VERSION=20220311.082431
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -390,8 +390,6 @@ pppoe_provider_create(){
 
 pppoe_connect_service_create(){
 	debug_echo "${FUNCNAME}( $@ )"
-	
-	# create the /lib/systemd/system/pppoe-connect.service file
 	local LPPPOE_SERVICE_NAME="${1:-${INST_NAME_SERVICE}}"
 	local LPPPOE_PROVIDER="${2:-'provider'}"
 	local LENV_FILE="${3:-${INST_NAME_ENVFILE}}"
@@ -410,6 +408,8 @@ pppoe_connect_service_create(){
 		error_echo "       LPPPOE_PROVIDER == ${LPPPOE_PROVIDER}"
 		error_echo "             LENV_FILE == ${LENV_FILE}"
 		error_echo " LENV_PROVIDER_VARNAME == ${LENV_PROVIDER_VARNAME}"
+		error_echo "          LRESOLV_CONF == ${LRESOLV_CONF}"
+		error_echo "          LRESOLV_PPPD == ${LRESOLV_PPPD}"
 		error_echo "=========================================="
 	fi
 
@@ -442,10 +442,13 @@ pppoe_connect_service_create(){
 	if [ -e '/etc/resolv.conf' ] && [ ! -L '/etc/resolv.conf' ]; then
 		cp -p '/etc/resolv.conf' '/etc/ppp/sys-resolv.conf'
 		LRESOLV_CONF="$(readlink -f '/etc/ppp/sys-resolv.conf')"
+		[ -f "$LRESOLV_CONF" ] && "$LLN" -rsf "$LRESOLV_CONF" '/etc/resolv.conf' || error_echo "Warning: could not create /etc/ppp/sys-resolv.conf file."
 	fi
 
 	#~ fi
 	
+	# create the /lib/systemd/system/pppoe-connect.service file
+
 	[ $QUIET -lt 1 ] && error_echo "Creating ${LPPPOE_SERVICE_NAME} for provider ${LPPPOE_PROVIDER}.."
 
 	[ $TEST -lt 1 ] && cat >"$LPPPOE_SERVICE_FILE" <<-EOF_PPPOESRVC0;
