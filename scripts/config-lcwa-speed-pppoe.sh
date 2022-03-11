@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220310.173514
+SCRIPT_VERSION=20220311.081350
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -230,7 +230,6 @@ pppoe_provider_create(){
 	local LSTATIC_IFACE="$(iface_static_get)"
 	local LPROVIDER_DIR='/etc/ppp/peers'
 	local LPROVIDER_FILE="${LPROVIDER_DIR}/${LPROVIDER}"
-	local LRESOLV_FILE='/etc/ppp/resolv.conf'
 	local LDEFPASS='b2NtNjhodjAK'
 	local LRET=0
 	
@@ -384,29 +383,6 @@ pppoe_provider_create(){
 		[ $TEST -lt 1 ] && chmod 0600 "$LSECRETS_FILE"
 	fi
 	
-	# Create the /etc/ppp/resolv.conf file
-	
-	[ -f "$LRESOLV_FILE" ] && [ ! -f "${LRESOLV_FILE}.org" ] && cp -p "$LRESOLV_FILE" "${LRESOLV_FILE}.org"
-	[ -f "$LRESOLV_FILE" ] && cp -p "$LPROVIDER_FILE" "${LPROVIDER_FILE}.bak"
-	
-	[ $QUIET -lt 1 ] && error_echo "Creating ${LRESOLV_FILE}.."
-	
-	[ $TEST -lt 1 ] && cat >"$LRESOLV_FILE" <<-EOF_RESOLV_FILE;
-	# $(date) -- ${LRESOLV_FILE}
-	nameserver 8.8.8.8
-	nameserver 4.2.2.4
-	EOF_RESOLV_FILE
-	
-	[ $DEBUG -gt 2 ] && debug_cat "$LRESOLV_FILE"	
-
-	if [ ! -f "$LRESOLV_FILE" ]; then
-		error_echo "${FUNCNAME}( $@ ): Error -- could not create ${LRESOLV_FILE} provider file."
-		((LRET+=1))
-	else
-		[ $TEST -lt 1 ] && chown root:root "$LRESOLV_FILE"
-		[ $TEST -lt 1 ] && chmod 0644 "$LRESOLV_FILE"
-	fi
-	
 	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 	
 	return $LRET
@@ -422,7 +398,8 @@ pppoe_connect_service_create(){
 	local LENV_PROVIDER_VARNAME="$(grep 'PROVIDER' "$LENV_FILE" | awk -F '=' '{ print $1 }')"
 	local LPPPOE_SERVICE_FILE="/lib/systemd/system/${LPPPOE_SERVICE_NAME}"
 	local LPPPD="$(which pppd)"
-	local LRESOLV_CONF="$(readlink -f '/etc/resolf.conf')"
+	local LRESOLV_CONF="$(readlink -f '/etc/resolv.conf')"
+	local LRESOLV_PPPD='/etc/ppp/resolv.conf'
 	local LLN="$(which ln)"
 	local LRET=1
 	
@@ -435,6 +412,39 @@ pppoe_connect_service_create(){
 		error_echo " LENV_PROVIDER_VARNAME == ${LENV_PROVIDER_VARNAME}"
 		error_echo "=========================================="
 	fi
+
+	# Create the /etc/ppp/resolv.conf file
+	
+	[ -f "$LRESOLV_PPPD" ] && [ ! -f "${LRESOLV_PPPD}.org" ] && cp -p "$LRESOLV_PPPD" "${LRESOLV_PPPD}.org"
+	[ -f "$LRESOLV_PPPD" ] && cp -p "$LRESOLV_PPPD" "${LRESOLV_PPPD}.bak"
+	
+	[ $QUIET -lt 1 ] && error_echo "Creating ${LRESOLV_PPPD}.."
+	
+	[ $TEST -lt 1 ] && cat >"$LRESOLV_PPPD" <<-EOF_RESOLV_PPPD;
+	# $(date) -- ${LRESOLV_FILE}
+	nameserver 8.8.8.8
+	nameserver 4.2.2.4
+	EOF_RESOLV_PPPD
+	
+	[ $DEBUG -gt 2 ] && debug_cat "$LRESOLV_FILE"	
+
+	if [ ! -f "$LRESOLV_FILE" ]; then
+		error_echo "${FUNCNAME}( $@ ): Error -- could not create ${LRESOLV_FILE} provider file."
+		((LRET+=1))
+	else
+		[ $TEST -lt 1 ] && chown root:root "$LRESOLV_FILE"
+		[ $TEST -lt 1 ] && chmod 0644 "$LRESOLV_FILE"
+	fi
+	
+	#~ if service_is_enabled 'systemd-resolved.service'; then
+
+	# if /etc/resolv.conf exists and is not a symlink, copy the file and make it a symlink..
+	if [ -e '/etc/resolv.conf' ] && [ ! -L '/etc/resolv.conf' ]; then
+		cp -p '/etc/resolv.conf' '/etc/ppp/sys-resolv.conf'
+		LRESOLV_CONF="$(readlink -f '/etc/ppp/sys-resolv.conf')"
+	fi
+
+	#~ fi
 	
 	[ $QUIET -lt 1 ] && error_echo "Creating ${LPPPOE_SERVICE_NAME} for provider ${LPPPOE_PROVIDER}.."
 
@@ -450,9 +460,9 @@ pppoe_connect_service_create(){
 	Type=exec
 	EnvironmentFile=${LENV_FILE}
 	# Fixup dns resolution
-	ExecStartPre=${LLN} -rsf /etc/ppp/resolv.conf /etc/resolv.conf
+	ExecStartPre=${LLN} -rsf ${LRESOLV_PPPD} /etc/resolv.conf
 	ExecStart=${LPPPD} call \$${LENV_PROVIDER_VARNAME}
-	# Restore systemd-resolved.  Normally /run/systemd/resolve/stub-resolv.conf
+	# Restore the systemd-resolved symlink-- normally: /run/systemd/resolve/stub-resolv.conf
 	ExecStopPost=${LLN} -rsf ${LRESOLV_CONF} /etc/resolv.conf
 
 	Restart=always
@@ -598,7 +608,7 @@ do
 		-v|--verbose)			# Increase message output.
 			((VERBOSE+=1))
 			;;
-		-f|--force)				# Tests script logic without performing actions.
+		-f|--force)				# Forces reinstall of the pppd package.
 			((FORCE+=1))
 			;;
 		-t|--test)				# Tests script logic without performing actions.
