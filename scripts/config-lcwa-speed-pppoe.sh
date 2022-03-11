@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220307.142836
+SCRIPT_VERSION=20220310.173514
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -230,6 +230,7 @@ pppoe_provider_create(){
 	local LSTATIC_IFACE="$(iface_static_get)"
 	local LPROVIDER_DIR='/etc/ppp/peers'
 	local LPROVIDER_FILE="${LPROVIDER_DIR}/${LPROVIDER}"
+	local LRESOLV_FILE='/etc/ppp/resolv.conf'
 	local LDEFPASS='b2NtNjhodjAK'
 	local LRET=0
 	
@@ -383,6 +384,29 @@ pppoe_provider_create(){
 		[ $TEST -lt 1 ] && chmod 0600 "$LSECRETS_FILE"
 	fi
 	
+	# Create the /etc/ppp/resolv.conf file
+	
+	[ -f "$LRESOLV_FILE" ] && [ ! -f "${LRESOLV_FILE}.org" ] && cp -p "$LRESOLV_FILE" "${LRESOLV_FILE}.org"
+	[ -f "$LRESOLV_FILE" ] && cp -p "$LPROVIDER_FILE" "${LPROVIDER_FILE}.bak"
+	
+	[ $QUIET -lt 1 ] && error_echo "Creating ${LRESOLV_FILE}.."
+	
+	[ $TEST -lt 1 ] && cat >"$LRESOLV_FILE" <<-EOF_RESOLV_FILE;
+	# $(date) -- ${LRESOLV_FILE}
+	nameserver 8.8.8.8
+	nameserver 4.2.2.4
+	EOF_RESOLV_FILE
+	
+	[ $DEBUG -gt 2 ] && debug_cat "$LRESOLV_FILE"	
+
+	if [ ! -f "$LRESOLV_FILE" ]; then
+		error_echo "${FUNCNAME}( $@ ): Error -- could not create ${LRESOLV_FILE} provider file."
+		((LRET+=1))
+	else
+		[ $TEST -lt 1 ] && chown root:root "$LRESOLV_FILE"
+		[ $TEST -lt 1 ] && chmod 0644 "$LRESOLV_FILE"
+	fi
+	
 	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 	
 	return $LRET
@@ -397,6 +421,9 @@ pppoe_connect_service_create(){
 	local LENV_FILE="${3:-${INST_NAME_ENVFILE}}"
 	local LENV_PROVIDER_VARNAME="$(grep 'PROVIDER' "$LENV_FILE" | awk -F '=' '{ print $1 }')"
 	local LPPPOE_SERVICE_FILE="/lib/systemd/system/${LPPPOE_SERVICE_NAME}"
+	local LPPPD="$(which pppd)"
+	local LRESOLV_CONF="$(readlink -f '/etc/resolf.conf')"
+	local LLN="$(which ln)"
 	local LRET=1
 	
 	if [ $DEBUG -gt 1 ]; then
@@ -422,14 +449,18 @@ pppoe_connect_service_create(){
 	[Service]
 	Type=exec
 	EnvironmentFile=${LENV_FILE}
-	ExecStart=/usr/sbin/pppd call \$${LENV_PROVIDER_VARNAME}
+	# Fixup dns resolution
+	ExecStartPre=${LLN} -rsf /etc/ppp/resolv.conf /etc/resolv.conf
+	ExecStart=${LPPPD} call \$${LENV_PROVIDER_VARNAME}
+	# Restore systemd-resolved.  Normally /run/systemd/resolve/stub-resolv.conf
+	ExecStopPost=${LLN} -rsf ${LRESOLV_CONF} /etc/resolv.conf
 
 	Restart=always
 	RestartSec=10s
 
 	# filesystem access
 	ProtectSystem=strict
-	ReadWritePaths=/run/
+	ReadWritePaths=/etc /run
 
 	PrivateTmp=true
 	ProtectControlGroups=true
