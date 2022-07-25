@@ -10,6 +10,7 @@ rpi/
 test_bins/
 src/
 pppoe/
+speedfiles/
 
 scripts/makelinks.sh
 scripts/lcwa-speed

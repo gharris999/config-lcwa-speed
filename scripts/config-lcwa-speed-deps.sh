@@ -588,7 +588,7 @@ python_libs_install(){
 		
 			# Figure out which version of python3-venv to install..
 			local LVER="$(python3 --version | sed -n -e 's/^.* \([[:digit:]]\{1\}\.[[:digit:]]\{1\}\).*$/\1/p')"
-			local LPYTHON_VENV="$(apt-cache search "python${LVER}-venv" | awk '{ print $1 }')"
+			local LPYTHON_VENV="$(apt-cache search "python${LVER}.*-venv" | awk '{ print $1 }')"
 			
 			LPKG_LIST=" \
 				python3 \
