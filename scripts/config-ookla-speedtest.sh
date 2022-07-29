@@ -700,7 +700,15 @@ ookla_speedtest_install(){
 	else
 		ookla_speedtest_pm_sources_install && LRET=$? || LRET=$?
 		#~ [ $LRET -eq 0 ] && 	pkgmgr_update && LRET=$? || LRET=$?
-		[ $LRET -eq 0 ] && 	pkgmgr_install 'speedtest' && LRET=$? || LRET=$?
+		if [ $LRET -eq 0 ]; then
+			pkgmgr_install 'speedtest'
+			LRET=$?
+		else
+			# If the package manager install fails (e.g. due to installing to a newer, 
+			#   unsuported OS) try a direct install..
+			ookla_speedtest_install_direct
+			LRET=$?
+		fi
 		
 	fi
 	

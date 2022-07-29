@@ -6,7 +6,7 @@
 #   By default, repos will be installed to /usr/local/share/lcwa-speed/speedtest &&
 #   									   /usr/local/share/lcwa-speed/speedtest-config
 ######################################################################################################
-SCRIPT_VERSION=20220227.120928
+SCRIPT_VERSION=20220729.105144
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -107,6 +107,9 @@ git_repo_check(){
 	local LREMOTE_REPO="$1"
 	local LLOCAL_REPO="$2"
 	local LTHIS_REPO=
+	
+	# Mark the local repo as "safe" so as to suspress warnings..
+	git config --global --add safe.directory "$LLOCAL_REPO"
 
 	if [ ! -d "${LLOCAL_REPO}/.git" ]; then
 		[ $VERBOSE -gt 0 ] && error_echo "${LLOCAL_REPO} does not exist or is not a git repository."
@@ -164,7 +167,7 @@ git_repo_clone(){
 
 	local LREMOTE_REPO="$1"
 	local LLOCAL_REPO="$2"
-
+	
 	# Cloning to --depth 1 (i.e. only most recent revs) results in a dirsize of
 	if [ $ALLREVS -gt 0 ]; then
 		[ $QUIET -lt 1 ] && error_echo "Cloning ${LREMOTE_REPO} (all revs) to ${LLOCAL_REPO}.."

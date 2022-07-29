@@ -4,7 +4,7 @@
 # Bash include script for generically installing services on upstart, systemd & sysv systems
 # 20220207 -- Gordon Harris
 ######################################################################################################
-INCSCRIPT_VERSION=20220307.145818
+INCSCRIPT_VERSION=20220726.103100
 SCRIPTNAME=$(basename "$0")
 
 # Get the underlying user...i.e. who called sudo..
@@ -52,6 +52,9 @@ USE_YUM=0
 #~ IS_FEDORA="$(hostnamectl status | grep -c 'Fedora')"
 # The following works for debian, ubuntu, raspbian
 IS_DEBIAN="$(grep -c -e '^ID.*=.*debian' /etc/os-release)"
+UBUNTU_VER=
+IS_FOCAL=0			# if Ubuntu ver >= 20.04, IS_FOCAL=1
+
 # The following ought to work for fedora, centos, etc.
 IS_FEDORA="$(grep -c -e '^ID.*=.*fedora' /etc/os-release)"
 
@@ -78,14 +81,19 @@ if [[ $OSTYPE == 'darwin'* ]]; then
 fi
 
 
-IS_FOCAL=0
 if [ $IS_DEBIAN -gt 0 ]; then
-	IS_FOCAL="$(lsb_release -a 2>/dev/null | grep -c 'focal')"
+	# Test to see if is Ubuntu 20.04 or later..
+	UBUNTU_VER="$(lsb_release -rs)"
+	# Not less than 20.04 == Greater than or equal to 20.04
+	if [[ ! "$UBUNTU_VER" < '20.04' ]]; then
+		IS_FOCAL=1
+	else
+		IS_FOCAL=0
+	fi
 fi
 
 IS_UPSTART=$(initctl version 2>/dev/null | grep -c 'upstart')
 IS_SYSTEMD=$(systemctl --version 2>/dev/null | grep -c 'systemd')
-
 
 # Network service type
 IS_NETPLAN="$(which netplan 2>/dev/null | wc -l)"
@@ -107,7 +115,6 @@ USE_FIREWALLD=$(( systemctl is-enabled --quiet 'firewalld' 2>/dev/null ) && echo
 HAS_GUI=$(ls -l /usr/bin/gnome* 2>/dev/null | wc -l)
 IS_GUI=$(systemctl get-default | grep -c 'graphical')
 IS_TEXT=$(systemctl get-default | grep -c 'multi-user')
-
 
 # Identify the init system
 # Prefer upstart to systemd if both are installed..
@@ -4528,8 +4535,11 @@ systemd_unit_file_logto_set(){
 	else
 		UNIT="${INST_NAME}.service"
 	fi
+	
 	UNIT_FILE="/lib/systemd/system/${UNIT}"
+	
     if [ -f "$UNIT_FILE" ]; then
+    
 		#StandardOutput=file:|append:/var/log/logfile
 		if [ $(grep -E -i -c "^StandardOutput=.*$" "$UNIT_FILE") -gt 0 ]; then
 			echo "Logging ${UNIT_FILE} StandardOutput to ${LLOGFILE}"
@@ -4547,6 +4557,7 @@ systemd_unit_file_logto_set(){
 			#~ sed -i "0,/^\[Unit\].*\$/s//\[Unit\]\nWants=${WANTS_ARGS}/" "$UNIT_FILE"
 
 		fi
+		
 		#StandardError=file:|append:/var/log/logfile
 		if [ $(grep -E -i -c "^StandardError=.*$" "$UNIT_FILE") -gt 0 ]; then
 			echo "Logging ${UNIT_FILE} StandardError to ${LLOGFILE}"
@@ -4560,17 +4571,13 @@ systemd_unit_file_logto_set(){
 			#~ sed -i "#^\[Service\].*#a StandardError=file:${LLOGFILE}" "$UNIT_FILE"
 		fi
 	fi
+	
 
 	touch "$LSTDLOGFILE"
 	chown "${INST_USER}:${INST_GROUP}" "$LSTDLOGFILE"
 	touch "$LERRLOGFILE"
 	chown "${INST_USER}:${INST_GROUP}" "$LERRLOGFILE"
 }
-
-
-
-
-
 
 ######################################################################################################
 # systemd_unit_file_Update() Update the systemd unit file with new values
@@ -4580,32 +4587,116 @@ systemd_unit_file_update(){
 }
 
 ######################################################################################################
+# systemd_unit_file_exists() Return 0 if systemctl knows about the unit file(s), 1 if not.
+######################################################################################################
+systemd_unit_file_exists(){
+	local LUNIT="$1"
+	local LRET=
+	# If no wildcards and if no extension on the unit name, assume service
+	[ $(echo "$LUNIT" | grep -c '*') -lt 1 ] && [ $(echo "$LUNIT" | grep -c -e '.*\..*') -lt 1 ] && LUNIT="${LUNIT}.service"
+	
+	systemctl list-unit-files "$LUNIT" >/dev/null 2>&1
+	LRET=$?
+	
+	if [ $LRET -gt 0 ]; then
+		debug_echo "Unit file ${LUNIT} does not exist on this system.."
+		return 1
+	fi
+
+	debug_echo "Unit file ${LUNIT} exists on this system.."
+	return 0
+}
+
+######################################################################################################
+# systemd_unit_file_list() List the unit files. Return 0 if unit file exists, 1 if not.
+######################################################################################################
+systemd_unit_file_list(){
+	local LUNIT="$1"
+	local LRET=
+
+	# If no unit file name given, list all the units on the system..
+	if [ -z "$LUNIT" ]; then
+		systemctl list-unit-files | grep '\.' | awk '{ print $1 }' | sort
+		return 0
+	fi
+
+	# If no wildcards and if no extension on the unit name, assume service
+	[ $(echo "$LUNIT" | grep -c '*') -lt 1 ] && [ $(echo "$LUNIT" | grep -c -e '.*\..*') -lt 1 ] && LUNIT="${LUNIT}.service"
+	
+	systemctl list-unit-files "$LUNIT" >/dev/null 2>&1
+	LRET=$?
+	
+	if [ $LRET -gt 0 ]; then
+		debug_echo "Unit file ${LUNIT} does not exist on this system.."
+		return 1
+	fi
+
+	systemctl list-unit-files "${LUNIT}" 2>&1 | grep -v 'unit files listed' | grep -E '\.' | awk '{ print $1 }' | sort
+	
+	return $LRET
+}
+
+######################################################################################################
+# systemd_unit_file_is_enabled() Return 0 if unit file is enabled, 1 if not enabled or nonexistant.
+######################################################################################################
+systemd_unit_file_is_enabled(){
+	local LUNIT="$1"
+	local LRET=
+	
+	[ -z "$LUNIT" ] && LUNIT="$INST_NAME"
+
+	# If no wildcards and if no extension on the unit name, assume service
+	[ $(echo "$LUNIT" | grep -c '*') -lt 1 ] && [ $(echo "$LUNIT" | grep -c -e '.*\..*') -lt 1 ] && LUNIT="${LUNIT}.service"
+	
+	systemctl is-enabled $LUNIT >/dev/null 2>&1
+	LRET=$?
+	
+	if [ $DEBUG -gt 0 ] || [ $VERBOSE -gt 0 ]; then
+		if [ $LRET -gt 0 ]; then
+			debug_echo "Unit file ${LUNIT} is DISABLED.."
+		else
+			debug_echo "Unit file ${LUNIT} is ENABLED.."
+		fi
+	fi
+	
+	return $LRET
+}
+
+######################################################################################################
 # systemd_unit_file_enable() Enable the systemd service unit file
 ######################################################################################################
 systemd_unit_file_enable(){
 	systemctl daemon-reload >/dev/null 2>&1
 
 	local LUNIT="$1"
+	local LUNIT_FILES=
 	local LUNIT_FILE=
 
 	if [ -z "$LUNIT" ]; then
-		LUNIT="${INST_NAME}.service"
+		LUNIT="$INST_NAME"
 	fi
-
-	if [ $(echo "$LUNIT" | grep -c -e '.*\..*') -lt 1 ]; then
-		LUNIT="${LUNIT}.service"
+	
+	# If no wildcards and if no extension on the unit name, assume service
+	[ $(echo "$LUNIT" | grep -c '*') -lt 1 ] && [ $(echo "$LUNIT" | grep -c -e '.*\..*') -lt 1 ] && LUNIT="${LUNIT}.service"
+	
+	LUNIT_FILES="$(find /lib/systemd/system/ -name "$LUNIT" | xargs)"
+	
+	if [ -z "$LUNIT_FILES" ]; then
+		error_echo "Cannot find ${LUNIT_FILE} systemd unit file.."
+		return 1
 	fi
-
-	LUNIT_FILE="/lib/systemd/system/${LUNIT}"
-
-	if [ -f "$LUNIT_FILE" ]; then
-		echo "Enabling ${LUNIT_FILE} systemd unit file.."
+	
+	
+	for LUNIT_FILE in $LUNIT_FILES
+	do
+		error_echo "Enabling ${LUNIT_FILE} systemd unit file.."
+		LUNIT="$(basename "$LUNIT_FILE")"
 
 		systemctl stop "$LUNIT" >/dev/null 2>&1
 		systemctl enable "$LUNIT" >/dev/null 2>&1
-	else
-		error_echo "Cannot find ${LUNIT_FILE} systemd unit file.."
-	fi
+	
+	done
+
 }
 
 systemd_unit_file_start() {
@@ -4681,8 +4772,12 @@ systemd_unit_file_status() {
 # systemd_unit_file_disable() Disable the systemd service unit file
 ######################################################################################################
 systemd_unit_file_disable(){
-	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
-		UNIT="$INST_NAME"
+	local LUNIT="$1"
+	
+	[ -z "$LUNIT" ] && LUNIT="$INST_NAME"
+	
+	if [ $(echo "$LUNIT" | grep -c -e '.*\..*') -gt 0 ]; then
+		LUNIT="$INST_NAME"
 	else
 		UNIT="${INST_NAME}.service"
 	fi
