@@ -40,7 +40,7 @@ done
 MAKEFILE="${SRCDIR}/Makefile"
 
 if [ -f "$MAKEFILE" ]; then
-	if [ $(cat "$MAKEFILE" | egrep -c '/sbin') -gt 0 ]; then
+	if [ $(cat "$MAKEFILE" | grep -c '/sbin') -gt 0 ]; then
 		echo "Patching ${MAKEFILE} to install binary to /usr/local/bin rather than sbin.."
 		grep 'sbindir = ${exec_prefix}' "$MAKEFILE"
 		sed -i -e 's#/sbin#/bin#g' "$MAKEFILE"

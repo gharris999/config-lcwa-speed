@@ -1,8 +1,8 @@
 #!/bin/bash
 
-SCRIPT_VERSION=20210117.145727
-
 # Bash script to configure default NIC to a static IP address..
+
+SCRIPT_VERSION=20220904.082018
 
 # Todo: Support creating wifi APs via hostapd
 #		https://unix.stackexchange.com/questions/401533/making-hostapd-work-with-systemd-networkd-using-a-bridge
@@ -16,72 +16,55 @@ SCRIPT_VERSION=20210117.145727
 #	Look at: http://www.server-world.info/en/note?os=Fedora_19&p=initial_conf&f=3
 #   Look at: http://danielgibbs.co.uk/2013/01/fedora-18-set-static-ip-address/
 
-#First disable the gnome network manager from starting up
-#
-#systemctl stop NetworkManager.service
-#systemctl disable NetworkManager.service
-#
-#Check which interface(s) you want to set to static
-#
-#[root@server ~]# ifconfig
-#em1: flags=4163 mtu 1500
-#..etc..
-#
-#Now you will need to edit the config file for that interface
-#
-#vi /etc/sysconfig/network-scripts/ifcfg-em1
-#
-#Edit the config to look like so. You will need to change BOOTPROTO from dhcp to static
-#and add IPADDR, NETMASK, BROADCAST and NETWORK variables. Also make sure ONBOOT is set to yes.
-#
-#UUID="e88f1292-1f87-4576-97aa-bb8b2be34bd3"
-#NM_CONTROLLED="yes"
-#HWADDR="D8:D3:85:AE:DD:4C"
-#BOOTPROTO="static"
-#DEVICE="em1"
-#ONBOOT="yes"
-#IPADDR0=192.168.1.2
-#NETMASK=255.255.255.0
-#BROADCAST=192.168.1.255
-#NETWORK=192.168.1.0
-#GATEWAY=192.168.1.1
-#Now to apply the settings restart the network service
-#
-#systemctl restart network.service
-#
+######################################################################################################
+# Include the generic service install functions
+######################################################################################################
 
-
-# This include file contains most of the utility functions..
+REC_INCSCRIPT_VER=20201220
 INCLUDE_FILE="$(dirname $(readlink -f $0))/instsrv_functions.sh"
 [ ! -f "$INCLUDE_FILE" ] && INCLUDE_FILE='/usr/local/sbin/instsrv_functions.sh'
 
 . "$INCLUDE_FILE"
 
-SCRIPT="$(readlink -f "$0")"
+if [[ -z "$INCSCRIPT_VERSION" ]] || [[ "$INCSCRIPT_VERSION" < "$REC_INCSCRIPT_VER" ]]; then
+	echo "Error: ${INCLUDE_FILE} version is ${INCSCRIPT_VERSION}. Version ${REC_INCSCRIPT_VER} or newer is required."
+fi
+
+######################################################################################################
+# Vars
+######################################################################################################
+
+SCRIPT_NAME="$(basename "$(readlink -f "$0")")"
 SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-INST_LOGFILE="/var/log/${SCRIPT}.log"
+SCRIPT_DESC="Script automate configuration of network interfaces for dhcp or static IPs."
+SCRIPT_LOG="/var/log/config/${SCRIPT_NAME%%.*}.log"
+
+INST_LOGFILE="$SCRIPT_LOG"
 
 
 #~ IS_FEDORA="$(which firewall-cmd 2>/dev/null | wc -l)"
-#~ IS_NETPLAN="$(which netplan 2>/dev/null | wc -l)"
+#~ IS_NETPLAN="$(which netplan 2>/dev/null | wc -l | xargs)"
 
-TESTPING=0
-NETCFG_ONLY=0
 DEBUG=0
 DEBUG_ARG=
 QUIET=0
 VERBOSE=0
+TEST=0
+FORCE=0
 LOG=0
-FAKE=0
+
+
+TESTPING=0
+NETCFG_ONLY=0
 NETPLAN_TRY=0
 UPDATE_YQ=0
 NO_PAUSE=0
 CONFIG_NETWORK_OPTS=
 
-
 # MULTI_NICS=1: Default to detecting primary & secondary NICs
 MULTI_NICS=1
 
+NUM_DEVICE=0
 ALL_NICS=0
 IS_PRIMARY=0
 NETDEV0=''
@@ -96,35 +79,37 @@ WPA_CONF_FILE='/etc/wpa_supplicant/wpa_supplicant.conf'
 
 FIREWALL_IFACE=
 FIREWALL_MINIMAL=0
+FIREWALL_PUBLIC=0
+# Default to setting up the firewall using the config-firewall-prep-apps.sh script.
+FIREWALL_USE_APPS=1
+NO_FIREWALL=0
+FIX_NETATALK=0
+INST_NETWORKMNGR=0
 
-
-log_msg(){
-	error_echo "$@"
-	[ $LOG -gt 0 ] && error_log "$@"
-}
-
-
+#~ log_msg(){
+	#~ error_echo "$@"
+	#~ [ $LOG -gt 0 ] && error_log "$@"
+#~ }
 
 ########################################################################################
-# wpa_supplicant_info_save() Save the ESSID & WPA-PSK to 
+# wpa_supplicant_info_save() Save the ESSID & WPA-PSK to
 #  /etc/wpa_supplicant/wpa_supplacant.conf file.
 #  If wpa-psk is blank, will configure for open wifi network.
 ########################################################################################
 wpa_supplicant_info_save(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local W_ESSID="$1"
 	local W_WPA_PSK="$2"
 	local CONF_DIR="$(dirname "$WPA_CONF_FILE")"
 
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
-
 	if [ -z "$W_ESSID" ]; then
-		[ $QUIET -lt 1 ] && error_echo "Error: no wireless ESSID specified.."
+		log_msg "Error: no wireless ESSID specified.."
 		return 1
 	fi
 
-	[ $VERBOSE -gt 0 ] && error_echo "Saving ssid ${W_ESSID} wpa-psk ${W_WPA_PSK}.."
+	[ $QUIET -lt 1 ] && log_msg "Saving ssid ${W_ESSID} wpa-psk ${W_WPA_PSK}.."
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
 
@@ -142,21 +127,21 @@ wpa_supplicant_info_save(){
 
 	# Connecting to an open wifi network??
 	if [ -z "$W_WPA_PSK" ]; then
-cat >>"$WPA_CONF_FILE" <<WNET0;
-network={
-	scan_ssid=1
-	ssid="$W_ESSID"
-	key_mgmt=NONE
-	priority=1
-}
-WNET0
+		cat >>"$WPA_CONF_FILE" <<-WNET0;
+		network={
+			scan_ssid=1
+			ssid="$W_ESSID"
+			key_mgmt=NONE
+			priority=1
+		}
+		WNET0
 	else
 		# Create the wpa-psk config file using wpa_passphrase for a psk protected network..
 		wpa_passphrase "$W_ESSID" "$W_WPA_PSK" >"$WPA_CONF_FILE"
 	fi
 
 	if [ ! -f "$WPA_CONF_FILE" ]; then
-		[ $QUIET -lt 1 ] && error_echo "Error saving wifi configuration.."
+		log_msg "Error saving wifi configuration.."
 		return 1
 	fi
 
@@ -169,13 +154,12 @@ WNET0
 #							Not used on systems with netplan.
 ########################################################################################
 
-ubuntu_iface_cfg_write(){	
+ubuntu_iface_cfg_write(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LDEV="$1"
 	local LADDRESS="$2"
 	local LIS_PRIMARY=$3
 	local LCONF_FILE='/etc/network/interfaces'
-
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
 
 	local LGATEWAY=$(echo $LADDRESS | sed -e 's/^\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)/\1.\2.\3.1/g')
 	local LNETWORK=$(echo $LADDRESS | sed -e 's/^\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)/\1.\2.\3.0/g')
@@ -187,48 +171,48 @@ ubuntu_iface_cfg_write(){
 
 	if [ $QUIET -lt 1 ]; then
 
-		error_echo "Configuring ${LDEV} for:"
+		log_msg "Configuring ${LDEV} for:"
 
 		iface_is_wireless "$LDEV"
 		if [ $? -lt 1 ]; then
 			if [ ! -z "$ESSID" ]; then
-				error_echo "     ESSID: ${ESSID}"
+				log_msg "     ESSID: ${ESSID}"
 			fi
 
 			if [ ! -z "$WPA_PSK" ]; then
-				error_echo "  wpa-psk: ${WPA_PSK}"
+				log_msg "  wpa-psk: ${WPA_PSK}"
 			fi
 		fi
-		error_echo "  Address: ${LADDRESS}"
-		error_echo "  Netmask: ${LNETMASK}"
-		error_echo "Broadcast: ${LBRDCAST}"
-		error_echo "  Network: ${LNETWORK}"
+		log_msg "  Address: ${LADDRESS}"
+		log_msg "  Netmask: ${LNETMASK}"
+		log_msg "Broadcast: ${LBRDCAST}"
+		log_msg "  Network: ${LNETWORK}"
 
 		if [ $IS_PRIMARY -eq 1 ]; then
 			# Secondary adapters must not have a gateway or dns-nameservers in /etc/network/interfaces or the network hangs at boot time
-			error_echo "  Gateway: ${LGATEWAY}"
-			error_echo "NameSrvrs: ${LNAMESRV}"
+			log_msg "  Gateway: ${LGATEWAY}"
+			log_msg "NameSrvrs: ${LNAMESRV}"
 		fi
 	fi
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
 
 	# If we're configuring just a single interface, overwrite the interfaces file..
 	if [ $MULTI_NICS -lt 1 ]; then
 
-cat >"$LCONF_FILE" <<NET0;
+	cat >"$LCONF_FILE" <<-NET0;
 
-# This file describes the network interfaces available on your system
-# and how to activate them. For more information, see interfaces(5).
+	# This file describes the network interfaces available on your system
+	# and how to activate them. For more information, see interfaces(5).
 
-# The loopback network interface
-auto lo
-iface lo inet loopback
+	# The loopback network interface
+	auto lo
+	iface lo inet loopback
 
-# The primary network interface
-NET0
+	# The primary network interface
+	NET0
 
 	else
 		# Delete any existing entry for the interface..
@@ -239,10 +223,10 @@ NET0
 # Add to the interfaces file..
 
 	# Is this a wired device??
-	#if [ $(iwconfig "$DEV" 2>&1 | egrep -c 'no wireless') -gt 0 ]; then
+	#if [ $(iwconfig "$DEV" 2>&1 | grep -c 'no wireless') -gt 0 ]; then
 	if [ ! -e "/sys/class/net/${LDEV}/wireless" ]; then
 
-		[ $VERBOSE -gt 0 ] && error_echo "${LDEV} is a wired device.."
+		[ $VERBOSE -gt 0 ] && log_msg "${LDEV} is a wired device.."
 
 		# Configuring for DHCP?
 		if [ "$LADDRESS" == 'dhcp' ]; then
@@ -252,31 +236,31 @@ NET0
 		# Static IP config..
 		else
 
-# Wired interface..
-cat >>"$LCONF_FILE" <<NET1;
-auto ${LDEV}
-iface ${LDEV} inet static
-address ${LADDRESS}
-netmask ${LNETMASK}
-broadcast ${LBRDCAST}
-network ${LNETWORK}
-NET1
+			# Wired interface..
+			cat >>"$LCONF_FILE" <<-NET1;
+			auto ${LDEV}
+			iface ${LDEV} inet static
+			address ${LADDRESS}
+			netmask ${LNETMASK}
+			broadcast ${LBRDCAST}
+			network ${LNETWORK}
+			NET1
 
 			if [ $IS_PRIMARY -gt 0 ]; then
-# Secondary adapters must not have a gateway or dns-nameservers in /etc/network/interfaces or the network hangs at boot time
-cat >>"$LCONF_FILE" <<NET1A;
-gateway ${LGATEWAY}
-dns-nameservers ${LNAMESRV}
-#dns-search localdomain
+				# Secondary adapters must not have a gateway or dns-nameservers in /etc/network/interfaces or the network hangs at boot time
+				cat >>"$LCONF_FILE" <<-NET1A;
+				gateway ${LGATEWAY}
+				dns-nameservers ${LNAMESRV}
+				#dns-search localdomain
 
-NET1A
+				NET1A
 			else
 				echo '' >>"$LCONF_FILE"
 			fi
 		fi
 	else
 		# This is a wireless device..
-		[ $VERBOSE -gt 0 ] && error_echo "${LDEV} is a wireless device.."
+		[ $VERBOSE -gt 0 ] && log_msg "${LDEV} is a wireless device.."
 
 		if [ -f "$WPA_CONF_FILE" ]; then
 
@@ -287,23 +271,23 @@ NET1A
 
 			else
 
-cat >>"$LCONF_FILE" <<WNET1;
-auto ${LDEV}
-iface ${LDEV} inet static
-wpa-conf ${WPA_CONF_FILE}
-address ${LADDRESS}
-netmask ${LNETMASK}
-broadcast ${LBRDCAST}
-network ${LNETWORK}
-WNET1
+				cat >>"$LCONF_FILE" <<-WNET1;
+				auto ${LDEV}
+				iface ${LDEV} inet static
+				wpa-conf ${WPA_CONF_FILE}
+				address ${LADDRESS}
+				netmask ${LNETMASK}
+				broadcast ${LBRDCAST}
+				network ${LNETWORK}
+				WNET1
 
 				if [ $IS_PRIMARY -gt 0 ]; then
-cat >>"$LCONF_FILE" <<WNET1A;
-gateway ${LGATEWAY}
-dns-nameservers ${LNAMESRV}
-#dns-search localdomain
+					cat >>"$LCONF_FILE" <<-WNET1A;
+					gateway ${LGATEWAY}
+					dns-nameservers ${LNAMESRV}
+					#dns-search localdomain
 
-WNET1A
+					WNET1A
 				else
 					echo '' >>"$LCONF_FILE"
 				fi
@@ -314,20 +298,20 @@ WNET1A
 				echo "auto ${LDEV}" >>"$LCONF_FILE"
 				echo "iface ${LDEV} inet dhcp" >>"$LCONF_FILE"
 			else
-cat >>"$LCONF_FILE" <<WNET2;
-auto ${LDEV}
-iface ${LDEV} inet static
-address ${LADDRESS}
-netmask ${LNETMASK}
-broadcast ${LBRDCAST}
-network ${LNETWORK}
-WNET2
+				cat >>"$LCONF_FILE" <<-WNET2;
+				auto ${LDEV}
+				iface ${LDEV} inet static
+				address ${LADDRESS}
+				netmask ${LNETMASK}
+				broadcast ${LBRDCAST}
+				network ${LNETWORK}
+				WNET2
 				if [ $IS_PRIMARY -gt 0 ]; then
-cat >>"$LCONF_FILE" <<WNET2A;
-gateway ${LGATEWAY}
-dns-nameservers ${LNAMESRV}
-#dns-search localdomain
-WNET2A
+					cat >>"$LCONF_FILE" <<-WNET2A;
+					gateway ${LGATEWAY}
+					dns-nameservers ${LNAMESRV}
+					#dns-search localdomain
+					WNET2A
 				else
 					echo '' >>"$LCONF_FILE"
 				fi
@@ -336,8 +320,8 @@ WNET2A
 	fi
 
 	if [ $VERBOSE -gt 0 ]; then
-		error_echo "Interfaces File:"
-		cat "$LCONF_FILE"
+		log_msg "Interfaces File:"
+		log_cat "$LCONF_FILE"
 	fi
 
 	return 0
@@ -349,7 +333,7 @@ WNET2A
 #								 Not used on systems with netplan.
 ########################################################################################
 ubuntu_iface_failsafe_write(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LDEV=
 	local LDEVS=
 	local LIS_PRIMARY=
@@ -361,8 +345,7 @@ ubuntu_iface_failsafe_write(){
 	local LNAMESRV=
 	local LNETMASK=
 	local LCONF_FILE='/etc/network/interfaces.failsafe'
-	
-	
+
 	LDEV="$(iface_primary_getb)"
 
 	iface_is_wired "$LDEV"
@@ -379,7 +362,7 @@ ubuntu_iface_failsafe_write(){
 			fi
 		done
 	fi
-	
+
 	# This will be our predictable subnet & address for failsafe..
 	LADDRESS="192.168.0.$(default_octet_get)"
 	LGATEWAY=$(echo $LADDRESS | sed -e 's/^\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)/\1.\2.\3.1/g')
@@ -392,41 +375,41 @@ ubuntu_iface_failsafe_write(){
 
 	if [ $QUIET -lt 1 ]; then
 
-		error_echo "Configuring ${LDEV} failsafe for:"
+		log_msg "Configuring ${LDEV} failsafe for:"
 
-		error_echo "  Address: ${LADDRESS}"
-		error_echo "  Netmask: ${LNETMASK}"
-		error_echo "Broadcast: ${LBRDCAST}"
-		error_echo "  Network: ${LNETWORK}"
-		error_echo "  Gateway: ${LGATEWAY}"
-		error_echo "NameSrvrs: ${LNAMESRV}"
+		log_msg "  Address: ${LADDRESS}"
+		log_msg "  Netmask: ${LNETMASK}"
+		log_msg "Broadcast: ${LBRDCAST}"
+		log_msg "  Network: ${LNETWORK}"
+		log_msg "  Gateway: ${LGATEWAY}"
+		log_msg "NameSrvrs: ${LNAMESRV}"
 	fi
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
 
 
-# Wired interface..
-cat >>"$LCONF_FILE" <<NET2;
-auto ${LDEV}
-iface ${LDEV} inet static
-address ${LADDRESS}
-netmask ${LNETMASK}
-broadcast ${LBRDCAST}
-network ${LNETWORK}
-gateway ${LGATEWAY}
-dns-nameservers ${LNAMESRV}
-#dns-search localdomain
+	# Wired interface..
+	cat >>"$LCONF_FILE" <<-NET2;
+	auto ${LDEV}
+	iface ${LDEV} inet static
+	address ${LADDRESS}
+	netmask ${LNETMASK}
+	broadcast ${LBRDCAST}
+	network ${LNETWORK}
+	gateway ${LGATEWAY}
+	dns-nameservers ${LNAMESRV}
+	#dns-search localdomain
 
-NET2
+	NET2
 
 	if [ $VERBOSE -gt 0 ]; then
-		error_echo "${LDEV} failsafe interface file: ${LCONF_FILE}"
-		cat "$LCONF_FILE"
+		log_msg "${LDEV} failsafe interface file: ${LCONF_FILE}"
+		log_cat "$LCONF_FILE"
 	fi
 
-	
+
 	return 0
 }
 
@@ -436,12 +419,10 @@ NET2
 #               https://github.com/mikefarah/yq/releases/latest/
 ###############################################################################
 yq_install(){
-
-
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	#~ if [ "$(uname -m)" = 'x86_64' ]; then
-		#~ error_echo "Installing yq from ppa.."
+		#~ log_msg "Installing yq from ppa.."
 		#~ # snap install yq
 		#~ add-apt-repository -y ppa:rmescandon/yq
 		#~ apt update
@@ -451,11 +432,11 @@ yq_install(){
 		#~ fi
 	#~ fi
 
-	error_echo "Finding latest version of yq YAML parser.."
+	[ $QUIET -lt 1 ] && log_msg "Finding latest version of yq YAML parser.."
 	TMPDIR='/tmp'
 	cd "$TMPDIR"
 	if [ ! "$TMPDIR" = "$(pwd)" ]; then
-		echo "Error: cannot cd to ${TMPDIR}."
+		log_msg "Error: cannot cd to ${TMPDIR}."
 		exit 1
 	fi
 
@@ -463,14 +444,14 @@ yq_install(){
 		rm -f "${TMPDIR}/index.html"
 	fi
 
-	# Don't know how to use YQ 4.x syntax thus far, so don't use it!!!
+	# YQ 4.x too broken to use thus far!!!
 	#~ YQ_INDEX='https://github.com/mikefarah/yq/releases/latest/'
 	YQ_INDEX='https://github.com/mikefarah/yq/releases/tag/3.4.1/'
-	
+
 	wget -q "$YQ_INDEX"
-	
+
 	if [ ! -f "${TMPDIR}/index.html" ]; then
-		error_echo "Error: cannot get ${YQ_INDEX}."
+		log_msg "Error: cannot get ${YQ_INDEX}."
 		exit 1
 	fi
 
@@ -483,36 +464,35 @@ yq_install(){
 	else
 		YQ_BIN='yq_linux_amd64'
 	fi
-	
+
 	YQ_BIN_URL="$(cat index.html | grep -e "href=.*${YQ_BIN}" | sed -n -e 's#.*href="\(/.*\)" rel.*$#\1#p')"
 
 	if [ -z "$YQ_BIN_URL" ]; then
-		error_echo "Could not form yq download URL.."
+		log_msg "Could not form yq download URL.."
 		exit 1
 	fi
+	
 	YQ_BIN_URL="https://github.com${YQ_BIN_URL}"
-	
-	
+
 	YQ="$(which yq)"
-	
+
 	if [ ! -z "$YQ" ]; then
 		YQ_REMOTE_VER="$(echo $YQ_BIN_URL | sed -n -e 's#^.*/\([0123456789\.]\+\)/.*$#\1#p')"
 		YQ_LOCAL_VER="$("$YQ" -V | sed -n -e 's/^.*version \(.*\)$/\1/p')"
-		
+
 		if [[ ! "$YQ_REMOTE_VER" < "$YQ_LOCAL_VER" ]]; then
-			error_echo "${YQ}, version ${YQ_LOCAL_VER} is up to date with remote version ${YQ_REMOTE_VER}."
+			$ $QUIET -lt 1 ] && log_msg "${YQ}, version ${YQ_LOCAL_VER} is up to date with remote version ${YQ_REMOTE_VER}."
 			return 1
 		fi
 	fi
-	
-	#~ Download https://github.com/mikefarah/yq/releases/download/3.3.0/yq_linux_amd64..
-	
 
-	error_echo "Downloading ${YQ_BIN_URL}.."
+	# Download https://github.com/mikefarah/yq/releases/download/3.3.0/yq_linux_amd64..
+
+	[ $QUIET -lt 1 ] && log_msg "Downloading ${YQ_BIN_URL}.."
 	wget -q "$YQ_BIN_URL"
-	
+
 	if [ ! -f "$YQ_BIN" ]; then
-		error_echo "Error: could not download ${YQ_BIN}"
+		log_msg "Error: could not download ${YQ_BIN}"
 		exit 1
 	fi
 
@@ -525,24 +505,35 @@ yq_install(){
 	cp "$YQ_BIN" "$YQ_INST"
 	chmod 755 "$YQ_INST"
 
-	error_echo "${YQ_BIN} installed successfully to ${YQ_INST}.."
+	[ $QUIET -lt 1 ] && log_msg "${YQ_BIN} installed successfully to ${YQ_INST}.."
 
 	rm "$YQ_BIN"
 	return 0
 }
 
+#~ function stacktrace {
+   #~ local i=0 line file func
+    #~ while read line func file; do
+        #~ echo -n "[$i] $file:$line $func(): "
+        #~ test -f "$file" && sed -n ${line}p "$file" || echo "<unknown>"
+        #~ ((i++))
+    #~ done < <(while caller $i; do ((i++)); done)
+#~ }
+
 ###############################################################################
 # yq_check() -- Check to see if yq is installed.  Needed for writing yaml files
 ###############################################################################
 yq_check(){
+	debug_echo "${FUNCNAME}( $@ )"
+	debug_stacktrace
 	# See if yq is installed, exit if not..
-	local YQ="$(which yq)"
-	
-	if [ -z "$YQ" ]; then
-		error_echo "yq yaml command line editor is not installed."
+	local LYQ="$(which yq)"
+
+	if [ -z "$LYQ" ]; then
+		log_msg "yq yaml command line editor is not installed."
 		yq_install
 	elif [ $UPDATE_YQ -gt 0 ]; then
-		error_echo "Checking version of installed yq yaml command line editor."
+		[ $QUIET -lt 1 ] && log_msg "Checking version of installed yq yaml command line editor."
 		yq_install
 	fi
 }
@@ -552,17 +543,18 @@ yq_check(){
 #                           yq, fping, dhcping
 ###############################################################################
 dependency_install(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LUTIL="$@"
 	if [ $IS_FEDORA -gt 0 ]; then
 		dnf --assumeyes install $LUTIL
-	
+
 	elif [ $IS_DEBIAN -gt 0 ]; then
-		apt-install $LUTIL
+		apt-install $LUTIL -y
 	else
-		error_echo "Error: cannot install ${LUTIL}."
+		log_msg "Error: cannot install ${LUTIL}."
 		return 1
 	fi
-	
+
 }
 
 ###############################################################################
@@ -570,7 +562,10 @@ dependency_install(){
 #                         yq, fping, dhcping, yamllint
 ###############################################################################
 dependencies_check(){
-	
+	debug_echo "${FUNCNAME}( $@ )"
+	local LDEPS=
+	local LPKG=
+
 	# Get linked interfaces
 	local LNETLINKS="$(ifaces_get_links)"
 
@@ -578,50 +573,609 @@ dependencies_check(){
 	if [ -z "$LNETLINKS" ]; then
 		return 1
 	fi
-
-	for UTIL in fping dhcping yamllint
-	do
-		error_echo "Checking for dependency ${UTIL}.."
-		[ -z "$(which "$UTIL" 2>/dev/null)" ] && dependency_install "$UTIL" || error_echo "${UTIL} found."
-	done
 	
+	# If we're installing NetworkManager..
+	[ $INST_NETWORKMNGR -gt 0 ] && LDEPS='network-manager '
+	[ $INST_NETWORKMNGR -gt 0 ] && [ $IS_GUI -gt 0 ] && LDEPS="${LDEPS}network-manager-gnome "
+	
+	LDEPS="${LDEPS}fping dhcping yamllint"
+	
+	for LPKG in $LDEPS
+	do
+		[ $QUIET -lt 1 ] && log_msg "Checking for dependency ${LPKG}.."
+		
+		if [ $(dpkg -s "$LPKG" 2>&1 | grep -c 'Status: install ok installed') -gt 0 ] && [ $FORCE -lt 1 ]; then
+			[ $VERBOSE -gt 0 ] && log_msg "Package ${LPKG} already installed.."
+			continue
+		fi
+		
+		dependency_install "$LPKG" || log_msg "${LPKG} could not be installed."
+	done
+
 	if [ $IS_NETPLAN -gt 0 ]; then
 		yq_check
 	fi
 
 }
 
+networkmanager_enable(){
+	debug_echo "${FUNCNAME}( $@ )"
+
+	if [ $IS_NETWORKMNGR -gt 0 ] && [ $FORCE -lt 1 ]; then
+		[ $QUIET -lt 1 ] && log_msg "This system is already running NetworkManager."
+		[ $QUIET -lt 1 ] && log_msg "Not disabling systemd-networkd.."
+	else
+		log_msg "Disabling systemd-networkd and enabling NetworkManager.."
+		[ $TEST -lt 1 ] && systemctl stop systemd-networkd
+		[ $TEST -lt 1 ] && systemctl stop systemd-resolved
+		[ $TEST -lt 1 ] && systemctl disable systemd-networkd
+		[ $TEST -lt 1 ] && systemctl disable systemd-resolved
+
+		[ $TEST -lt 1 ] && systemctl enable NetworkManager
+		[ $TEST -lt 1 ] && systemctl start NetworkManager
+
+		if [ $IS_NETPLAN -gt 0 ]; then
+			netplan_cfg_nm_write
+			netplan_apply
+		fi
+	fi
+
+	IS_NETWORKD=$(( systemctl is-enabled --quiet 'systemd-networkd' 2>/dev/null ) && echo 1 || echo 0)
+	IS_NETWORKMNGR=$(( systemctl is-enabled --quiet 'NetworkManager' 2>/dev/null ) && echo 1 || echo 0)
+}
+
+networkd_enable(){
+	debug_echo "${FUNCNAME}( $@ )"
+
+	if [ $IS_NETWORKD -gt 0 ] && [ $FORCE -lt 1 ]; then
+		[ $QUIET -lt 1 ] && log_msg "This system is already running systemd-networkd."
+		[ $QUIET -lt 1 ] && log_msg "Not disabling NetworkManager.."
+	else
+		[ $QUIET -lt 1 ] && log_msg "Disabling NetworkManager and enabling systemd-networkd.."
+		[ $TEST -lt 1 ] && systemctl stop NetworkManager
+		[ $TEST -lt 1 ] && systemctl disable NetworkManager
+		
+		[ $TEST -lt 1 ] && systemctl enable systemd-networkd
+		[ $TEST -lt 1 ] && systemctl enable systemd-resolved
+
+		[ $TEST -lt 1 ] && systemctl start systemd-networkd
+		[ $TEST -lt 1 ] && systemctl start systemd-resolved
+	fi
+	
+	IS_NETWORKD=$(( systemctl is-enabled --quiet 'systemd-networkd' 2>/dev/null ) && echo 1 || echo 0)
+	IS_NETWORKMNGR=$(( systemctl is-enabled --quiet 'NetworkManager' 2>/dev/null ) && echo 1 || echo 0)
+	
+}
+
+###############################################################################
+# networkmanager_connection_get( [ iface ] ) -- Get the NetworkManager
+#  connection name for the interface, or primary interface if iface == null
+###############################################################################
+networkmanager_connection_get(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LIFACE="$1"
+	local LIS_WIFI=0
+	local LCONNECTION=
+	local LRET=1
+
+	if [ -z "$LIFACE" ]; then
+		LIFACE="$(iface_primary_getb)"
+	else
+		# Validate the interface name
+		if ! iface_is_valid "$LIFACE"; then
+			log_msg "${FUNCNAME}() error: ${LIFACE} is not a valid network interface."
+			return 1
+		fi
+	fi
+	
+	iface_is_wireless "$LIFACE" && LIS_WIFI=1
+	
+	[ $DEBUG -gt 0 ] && log_msg "Searching for NetworkManager Connection name for interface ${LIFACE}"
+
+	LCONNECTION="$(nmcli --get-values=DEVICE,NAME connection | grep -m1 -E "^${LIFACE}:" | sed -n -e 's/^.*:\(.*\)$/\1/p')"
+
+	if [ ! -z "$LCONNECTION" ]; then
+		LRET=0
+		[ $DEBUG -gt 0 ] && log_msg "Found NetworkManager Connection ${LCONNECTION} for interface ${LIFACE}"
+		echo "$LCONNECTION"
+	else
+		LRET=1
+		[ $DEBUG -gt 0 ] && log_msg "${FUNCNAME}() error: cound not find NetworkManager Connection for interface ${LIFACE}"
+	fi
+
+	return $LRET
+}
+
+###############################################################################
+# networkmanager_connection_get_next( [ iface ] ) -- constructs a new network
+#  connection name
+###############################################################################
+networkmanager_connection_get_next(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LIFACE="$1"
+	local LIS_WIFI=0
+	local LCONNECTION=
+	local LNUM=0
+	local LRET=1
+	[ -z "$LIFACE" ] && LIFACE="$(iface_primary_getb)"
+
+	# Validate the interface name
+	if ! iface_is_valid "$LIFACE"; then
+		log_msg "${FUNCNAME}() error: ${LIFACE} is not a valid network interface."
+		return 1
+	fi
+	
+	iface_is_wireless "$LIFACE" && LIS_WIFI=1
+
+	LNUM="$(nmcli --get-values=NAME,DEVICE,UUID connection | grep ":${LIFACE}:" | wc -l)"
+
+	while true; do
+		((LNUM++))
+		
+		if [ $LIS_WIFI -gt 0 ]; then
+			LCONNECTION="Auto wifi ${LNUM}"
+		else
+			LCONNECTION="Wired connection ${LNUM}"
+		fi
+		
+		networkmanager_connection_exists "$LCONNECTION" || break
+		
+		[ $LNUM -gt 9 ] && break
+		
+	done
+
+	if [ -z "$LCONNECTION" ]; then
+		LRET=1
+		log_msg "${FUNCNAME}() error: could not construct new connection name for interface ${LIFACE}"
+	else
+		LRET=0
+		[ $DEBUG -gt 0 ] && log_msg "New generated connection name for interface ${LIFACE}: ${LCONNECTION}"
+		echo "$LCONNECTION"
+	fi
+
+	return $LRET
+}
+
+###############################################################################
+# networkmanager_connection_exists( 'connection_name' ) -- returns 0 if the
+#   connection_name exists.
+###############################################################################
+networkmanager_connection_exists(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LCONNECTION="$1"
+	if [ $(nmcli --get-values=DEVICE,NAME,UUID connection show | grep -c ":${LCONNECTION}:") -gt 0 ]; then
+		debug_echo "${FUNCNAME}( $@ ); connection ${LCONNECTION} exists."
+		return 0
+	else
+		debug_echo "${FUNCNAME}( $@ ); connection ${LCONNECTION} does NOT exist."
+		return 1
+	fi
+}
+
+###############################################################################
+# networkmanager_connection_is_active( 'connection_name' ) -- returns 0 if the
+#   connection_name is active, i.e. linked.
+###############################################################################
+networkmanager_connection_is_active(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LCONNECTION="$1"
+	
+	#~ eno1:Wired connection 1:e8e61688-0439-33b9-afd7-30feebffcc6b
+	#~ wlp0s20f3:Auto rockhouse:c9ce3a69-982d-4d6a-8b5b-cb91c08b697b	
+	
+	if [ $(nmcli --get-values=DEVICE,NAME,UUID connection show --active | grep -c ":${LCONNECTION}:") -gt 0 ]; then
+		debug_echo "${FUNCNAME}( $@ ); connection ${LCONNECTION} is active."
+		return 0
+	else
+		debug_echo "${FUNCNAME}( $@ ); connection ${LCONNECTION} is NOT active."
+		return 1
+	fi
+}
+
+###############################################################################
+# networkmanager_connection_add( 'connection_name', 'iface', 'ipaddr' )
+#   Creates a new connection and brings it up.  Returns 0 if successfull, 1 if not.
+###############################################################################
+networkmanager_connection_add(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LCONNECTION="$1"
+	local LIFACE="$2"
+	local LIPADDR="${3:-dhcp}"
+	local LSSID="$4"
+	local LPSK="$5"
+	local LTYPE=
+	local LGATEWAY=
+	local LDNS=
+	local LIS_WIFI=
+	local LIS_ETHERNET=
+	local LIS_DHCP=
+	local LRET=1
+	local LLOGFILE=
+	
+	[ $LOG -gt 0 ] && LLOGFILE="$SCRIPT_LOG" || LLOGFILE='/dev/null'
+
+	# Validate the interface name
+	if ! iface_is_valid "$LIFACE"; then
+		log_msg "${FUNCNAME}() error: ${LIFACE} is not a valid network interface."
+		return 1
+	fi
+	
+	if iface_is_wireless "$LIFACE"; then
+		LIS_WIFI=1
+		LIS_ETHERNET=0
+		LTYPE='wifi'
+	else
+		LIS_WIFI=0
+		LIS_ETHERNET=1
+		LTYPE='ethernet'
+	fi
+	
+	debug_echo ' '
+	debug_echo "${FUNCNAME}( $@ ) here at ${LINENO}"
+	debug_echo "      LIFACE == ${LIFACE}"
+	debug_echo "     LIPADDR == ${LIPADDR}"
+	#~ debug_echo "             == dhcp"
+
+	if [ "$LIPADDR" = "dhcp" ]; then
+		LIS_DHCP=1
+	else
+		LIS_DHCP=0
+		LGATEWAY=$(echo "$LIPADDR" | sed -e 's/^\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)/\1.\2.\3.1/g')
+		LDNS="$LGATEWAY"
+	fi
+	
+	debug_echo ' '
+	debug_echo "${FUNCNAME}( $@ ) here at ${LINENO}"
+	debug_echo "    LIS_WIFI == ${LIS_WIFI}"
+	if [ $LIS_WIFI -gt 0 ]; then
+		debug_echo "       LSSID == ${LSSID}"
+		debug_echo "        LPSK == ${LPSK}"
+	fi
+	debug_echo "LIS_ETHERNET == ${LIS_ETHERNET}"
+	debug_echo "    LIS_DHCP == ${LIS_DHCP}"
+	debug_echo ' '
+	
+	if [ $LIS_WIFI -gt 0 ]; then
+		if [ -z "$LSSID" ]; then
+			log_msg "${FUNCNAME}() error: attempting add a wifi connection but SSID not specified."
+			return 1
+		fi
+		
+		[ $QUIET -lt 1 ] && log_msg "Creating ${LTYPE} connection ${LCONNECTION} for ${LIFACE}, ${LIPADDR} ${LSSID} ${LPSK}"
+		if iface_is_linked "$LIFACE"; then
+			[ $QUIET -lt 1 ] && log_msg "Bringing ${LIFACE} link down.."
+			[ $TEST -lt 1 ] && ip link set dev "$LIFACE" down
+		fi
+	
+		if [ $LIS_DHCP -gt 0 ]; then
+			[ $TEST -lt 1 ] && nmcli connection add con-name "$LCONNECTION" \
+				type "$LTYPE" \
+				ifname "$LIFACE" \
+				autoconnect yes \
+				save yes \
+				ssid "$LSSID" \
+				wifi-sec.key-mgmt wpa-psk \
+				wifi-sec.psk "$LPSK" \
+				ipv4.method auto 2>&1 | tee -a "$LLOGFILE"
+		else
+			[ $TEST -lt 1 ] && nmcli connection add con-name "$LCONNECTION" \
+				type "$LTYPE" \
+				ifname "$LIFACE" \
+				autoconnect yes \
+				save yes \
+				ssid "$LSSID" \
+				wifi-sec.key-mgmt wpa-psk \
+				wifi-sec.psk "$LPSK" \
+				ipv4.method manual \
+				ipv4.address "${LIPADDR}/24" \
+				ipv4.dns "$LDNS" \
+				ipv4.gateway "$LGATEWAY" 2>&1 | tee -a "$LLOGFILE"
+		fi
+		
+	elif [ $LIS_ETHERNET -gt 0 ]; then
+
+		[ $QUIET -lt 1 ] && log_msg "Creating ${LTYPE} connection ${LCONNECTION} for ${LIFACE}, ${LIPADDR}"
+		if iface_is_linked "$LIFACE"; then
+			[ $QUIET -lt 1 ] && log_msg "Bringing ${LIFACE} link down.."
+			[ $TEST -lt 1 ] && ip link set dev "$LIFACE" down
+		fi
+
+		if [ $LIS_DHCP -gt 0 ]; then
+			[ $TEST -lt 1 ] && nmcli connection add con-name "$LCONNECTION" \
+				type "$LTYPE" \
+				ifname "$LIFACE" \
+				autoconnect yes \
+				save yes \
+				ipv4.method auto 2>&1 | tee -a "$LLOGFILE"
+		else
+			[ $TEST -lt 1 ] && nmcli connection add con-name "$LCONNECTION" \
+				type "$LTYPE" \
+				ifname "$LIFACE" \
+				autoconnect yes \
+				save yes \
+				ipv4.method manual \
+				ipv4.address "${LIPADDR}/24" \
+				ipv4.dns "$LDNS" \
+				ipv4.gateway "$LGATEWAY" 2>&1 | tee -a "$LLOGFILE"
+		fi
+		
+	fi
+	
+	nmcli connection up "$LCONNECTION"  2>&1 | tee -a "$LLOGFILE"
+	LRET=$?
+	
+	if [ $LRET -gt 0 ]; then
+		log_msg "${FUNCNAME}() error: Could not add ${LTYPE} connection ${LCONNECTION} on ${LIFACE}."
+	else
+		[ $QUIET -lt 1 ] && log_msg "Connection ${LCONNECTION}, type ${LTYPE} created successsfully."
+		if [ $DEBUG -gt 0 ]; then
+			nmcli -o -s connection show "$LCONNECTION"
+			error_echo ' '
+		fi
+	fi
+
+	return $LRET
+}
+
+networkmanager_connection_modify(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LCONNECTION="$1"
+	local LIFACE="$2"
+	local LIPADDR="${3:-dhcp}"
+	local LTYPE=
+	local LSSID="$4"
+	local LPSK="$5"
+	local LGATEWAY=
+	local LDNS=
+	local LIS_WIFI=
+	local LIS_ETHERNET=
+	local LIS_DHCP=
+	local LRET=1
+	local LLOGFILE=
+	
+	[ $LOG -gt 0 ] && LLOGFILE="$SCRIPT_LOG" || LLOGFILE='/dev/null'
+
+	# Verify that the connection exists
+	if ! networkmanager_connection_exists "$LCONNECTION"; then
+		log_msg "${FUNCNAME}() error: connection ${LCONNECTION} does not exist."
+		return 1
+	fi
+
+	# Validate the interface name
+	if ! iface_is_valid "$LIFACE"; then
+		log_msg "${FUNCNAME}() error: ${LIFACE} is not a valid network interface."
+		return 1
+	fi
+	
+	if iface_is_wireless "$LIFACE"; then
+		LIS_WIFI=1
+		LIS_ETHERNET=0
+		LTYPE='wifi'
+	else
+		LIS_WIFI=0
+		LIS_ETHERNET=1
+		LTYPE='ethernet'
+	fi
+	
+	if [ "$LIPADDR" = "dhcp" ]; then
+		LIS_DHCP=1
+	else
+		LIS_DHCP=0
+		LGATEWAY=$(echo "$LIPADDR" | sed -e 's/^\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)/\1.\2.\3.1/g')
+		LDNS="$LGATEWAY"
+	fi
+	
+	debug_echo ' '
+	debug_echo "${FUNCNAME}( $@ ) here at ${LINENO}"
+	debug_echo "    LIS_WIFI == ${LIS_WIFI}"
+	debug_echo "LIS_ETHERNET == ${LIS_ETHERNET}"
+	debug_echo "    LIS_DHCP == ${LIS_DHCP}"
+	debug_echo ' '
+	
+	if networkmanager_connection_is_active "$LCONNECTION"; then
+		[ $QUIET -lt 1 ] && log_msg "Bringing down connection ${LCONNECTION}.."
+		[ $TEST -lt 1 ] && nmcli connection down "$LCONNECTION"  2>&1 | tee -a "$LLOGFILE"
+	fi
+	
+	# If new ipaddr is dhcp, remove any old static ip addresses..
+	if [ $LIS_DHCP -gt 0 ]; then
+		[ $TEST -lt 1 ] && nmcli connection modify "$LCONNECTION" remove ipv4 2>&1 | tee -a "$LLOGFILE"
+		[ $TEST -lt 1 ] && nmcli connection modify "$LCONNECTION" remove ipv6 2>&1 | tee -a "$LLOGFILE"
+	fi
+
+	if [ $LIS_WIFI -gt 0 ]; then
+
+		if [ -z "$LSSID" ]; then
+			log_msg "${FUNCNAME}() error: attempting add a wifi connection but SSID not specified."
+			return 1
+		fi
+		
+		[ $QUIET -lt 1 ] && log_msg "Modifying ${LTYPE} connection ${LCONNECTION} for ${LIFACE}, ${LIPADDR} ${LSSID} ${LPSK}"
+
+		if iface_is_linked "$LIFACE"; then
+			[ $QUIET -lt 1 ] && log_msg "Bringing ${LIFACE} link down.."
+			[ $TEST -lt 1 ] && ip link set dev "$LIFACE" down
+		fi
+	
+	
+		if [ $LIS_DHCP -gt 0 ]; then
+			[ $TEST -lt 1 ] && nmcli connection modify "$LCONNECTION" \
+				ifname "$LIFACE" \
+				autoconnect yes \
+				ssid "$LSSID" \
+				wifi-sec.key-mgmt wpa-psk \
+				wifi-sec.psk "$LPSK" \
+				ipv4.method auto 2>&1 | tee -a "$LLOGFILE"
+		else
+			[ $TEST -lt 1 ] && nmcli connection modify "$LCONNECTION" \
+				ifname "$LIFACE" \
+				autoconnect yes \
+				ssid "$LSSID" \
+				wifi-sec.key-mgmt wpa-psk \
+				wifi-sec.psk "$LPSK" \
+				ipv4.method manual \
+				ipv4.address "${LIPADDR}/24" \
+				ipv4.dns "$LDNS" \
+				ipv4.gateway "$LGATEWAY" 2>&1 | tee -a "$LLOGFILE"
+		fi
+		
+	elif [ $LIS_ETHERNET -gt 0 ]; then
+	
+		[ $QUIET -lt 1 ] && log_msg "Modifying ${LTYPE} connection ${LCONNECTION} for ${LIFACE}, ${LIPADDR}"
+
+		if iface_is_linked "$LIFACE"; then
+			[ $QUIET -lt 1 ] && log_msg "Bringing ${LIFACE} link down.."
+			[ $TEST -lt 1 ] && ip link set dev "$LIFACE" down
+		fi
+	
+		debug_echo "${FUNCNAME}() here at ${LINENO}"
+
+		if [ $LIS_DHCP -gt 0 ]; then
+			[ $TEST -lt 1 ] && nmcli connection modify "$LCONNECTION" \
+				ifname "$LIFACE" \
+				autoconnect yes \
+				ipv4.method auto 2>&1 | tee -a "$LLOGFILE"
+		else
+			[ $TEST -lt 1 ] && nmcli connection modify "$LCONNECTION" \
+				ifname "$LIFACE" \
+				autoconnect yes \
+				ipv4.method manual \
+				ipv4.address "${LIPADDR}/24" \
+				ipv4.dns "$LDNS" \
+				ipv4.gateway "$LGATEWAY" 2>&1 | tee -a "$LLOGFILE"
+		fi
+		
+		debug_echo "${FUNCNAME}() here at ${LINENO}"
+ 
+	fi
+	
+	nmcli connection up "$LCONNECTION" >/dev/null
+	LRET=$?
+	
+	if [ $LRET -gt 0 ]; then
+		log_msg "${FUNCNAME}() error: Could not modify ${LTYPE} connection ${LCONNECTION}."
+	else
+		if [ $DEBUG -gt 0 ]; then
+			nmcli -o -s connection show "$LCONNECTION"
+			error_echo ' '
+		fi
+		[ $QUIET -lt 1 ] && log_msg "Connection ${LCONNECTION}, type ${LTYPE} modified successsfully."
+	fi
+
+	return $LRET
+}
+
+###############################################################################
+# networkmanager_connection_remove( 'connection_name|iface_name')
+#   Deletes an existing connection and brings it up.  Returns 0 if successfull, 1 if not.
+###############################################################################
+networkmanager_connection_remove(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LCONNECTION="$1"
+	local LIFACE=
+	local LRET=1
+	
+	if ! networkmanager_connection_exists "$LCONNECTION"; then
+		LIFACE="$LCONNECTION"
+		if iface_is_valid "$LIFACE"; then
+			LCONNECTION="$(networkmanager_connection_get "$LIFACE")"
+			LRET=$?
+		fi
+		
+		if [ $LRET -gt 0 ]; then
+			log_msg "Cannot remove non-existant connection ${LCONNECTION}.."
+			return 1
+		fi
+	fi
+	
+	[ $QUIET -lt 1 ] && log_msg "Removing connection ${LCONNECTION}.."
+	nmcli connection delete "$LCONNECTION"
+	LRET=$?
+	
+	if [ $LRET -gt 0 ]; then
+		log_msg "Could not remove connection ${LCONNECTION}.."
+		return 1
+	fi
+}
+
+###############################################################################################
+# networkmanager_iface_set( 'iface', 'ipaddr|dhcp', [ 'ssid' ], [ 'wpa-psk' ])
+#   Creates or modifies a ethernet or wifi connection on the network interface.
+###############################################################################################
+networkmanager_iface_set(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LIFACE="$1"
+	local LIPADDR="${2:-dhcp}"
+	local LSSID="$3"
+	local LPSK="$4"
+	local LIS_WIFI=0
+	local LCONNECTION="$(networkmanager_connection_get "$LIFACE")"
+	local LRET=1
+	
+	# Validate the interface name
+	if ! iface_is_valid "$LIFACE"; then
+		log_msg "${FUNCNAME}() error: ${LIFACE} is not a valid network interface."
+		return 1
+	fi
+	
+	iface_is_wireless "$LIFACE" && LIS_WIFI=1
+	
+	# No existing connection, add one
+	if [ -z "$LCONNECTION" ]; then
+		[ $QUIET -lt 1 ] && log_msg "Constructing new NetworkManager connection for ${LIFACE}.."
+		LCONNECTION="$(networkmanager_connection_get_next "$LIFACE")"
+		LRET=$?
+		[ $LIS_WIFI ] && [ ! -z "$LSSID" ] && LCONNECTION="$(echo "$LCONNECTION" | sed -e "s/wifi/${LSSID}/")"
+		if [ $LRET -lt 1 ]; then
+			networkmanager_connection_add "$LCONNECTION" "$LIFACE" "$LIPADDR" "$LSSID" "$LPSK"
+			LRET=$?
+		fi
+	else
+		# Modify an existing connection
+		[ $QUIET -lt 1 ] && log_msg "Modifying NetworkManager connection ${LCONNECTION} for ${LIFACE}.."
+		networkmanager_connection_modify "$LCONNECTION" "$LIFACE" "$LIPADDR" "$LSSID" "$LPSK"
+		LRET=$?
+	fi
+	
+	if [ $LRET -lt 1 ]; then
+		[ $QUIET -lt 1 ] && log_msg "Connection ${LCONNECTION} established on interface ${LIFACE}."
+	else
+		log_msg "${FUNCNAME}() error: Connection ${LCONNECTION} could not established on interface ${LIFACE}."
+	fi
+	
+	return $LRET
+}
+
 ########################################################################################
-# ubuntu_netplan_cfg_find()  Find the /etc/netplan/0x-netcfg.yaml file
+# netplan_cfg_find()  Find the /etc/netplan/0x-netcfg.yaml file
 ########################################################################################
-ubuntu_netplan_cfg_find(){
+netplan_cfg_find(){
+	debug_echo "${FUNCNAME} $@"
 	local LEXT="$1"
 	local LCFG_DIR="$2"
 	local LCONF_FILE=
 	local LDEFCONF_FILE='/etc/netplan/01-netcfg.yaml'
 
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
-	
 	if [ -z "$LEXT" ]; then
 		LEXT='yaml'
 	fi
-	
+
 	if [ -z "$LCFG_DIR" ]; then
 		LCFG_DIR='/etc/netplan'
 	fi
 
 	#~ LCONF_FILE=$(find /etc/netplan -maxdepth 3 -type f -name "*.${LEXT}" | sort | grep -m1 '.yaml')
 	LCONF_FILE=$(find /etc/netplan -maxdepth 1 -type f -name "*.${LEXT}" | sort | grep -m1 ".${LEXT}")
-	
+
 	#~ if [ -z "$LCONF_FILE" ]; then
-		#~ error_echo "Cannot find any file *.${LEXT}"
+		#~ log_msg "Cannot find any file *.${LEXT}"
 		#~ return 1
 	#~ fi
-	
+
 	if [ -z "$LCONF_FILE" ]; then
-		error_echo "${FUNCNAME}: Could not find a netplan config yaml file."
+		[ $QUIET -lt 1 ] && log_msg "${FUNCNAME}: Could not find a netplan config yaml file."
 		LCONF_FILE="$LDEFCONF_FILE"
-		error_echo "${FUNCNAME}: Creating default ${LCONF_FILE} netplan config yaml file."
+		[ $QUIET -lt 1 ] && log_msg "${FUNCNAME}: Creating default ${LCONF_FILE} netplan config yaml file."
 		touch "$LCONF_FILE"
 	else
 		# Rename the existing yaml file if not matching our default name..
@@ -629,66 +1183,109 @@ ubuntu_netplan_cfg_find(){
 			mv -f "$LCONF_FILE" "$LDEFCONF_FILE"
 			LCONF_FILE="$LDEFCONF_FILE"
 		fi
-		
+
 		if [ ! -f "${LCONF_FILE}.org" ]; then
-			cp "$LCONF_FILE" "${LCONF_FILE}.org"
+			cp -p "$LCONF_FILE" "${LCONF_FILE}.org"
 		fi
 
-		cp "$LCONF_FILE" "${LCONF_FILE}.bak"
+		cp -p "$LCONF_FILE" "${LCONF_FILE}.bak"
 
 	fi
-	
+
 	echo "$LCONF_FILE"
-	
+
 	return 0
 }
 
+######################################################################################################
+# netplan_nm_yaml_write() -- writes a default NetworkManager netplan config yaml file
+######################################################################################################
 
-########################################################################################
-# ubuntu_netplan_cfg_write()  Write the /etc/netplan/0x-netcfg.yaml file using yq
-########################################################################################
-ubuntu_netplan_cfg_write(){	
-	local LDEV="$1"
-	local LADDRESS="$2"
-	local LMACADDR=
-	local LIS_DHCP=0
-	local LIS_PRIMARY=$3
-	local LGATEWAY=
-	local LNAMESRV0=
-	local LNAMESRV1=
-	local LCONF_FILE=
-	local LDEFCONF_FILE='/etc/netplan/01-netcfg.yaml'
-	local bRet=0
-
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+netplan_cfg_nm_write(){
+	local LNETPLAN_CONF="$(netplan_cfg_find)"
+	local LHEADER=
 	
 	# See if yq is installed, exit if not..
 	yq_check
 
 	local YQ="$(which yq)"
 	
-	if [ -z "$YQ" ]; then
-		error_echo "Error: Could not install yq.  ${SCRIPTNAME} must exit."
-		exit 1
+	[ $QUIET -lt 1 ] && log_msg "Writing NetworkManager netplan config yaml file ${LNETPLAN_CONF}"
+	
+	if [ -f "$LNETPLAN_CONF" ]; then
+		[ ! -f "${LNETPLAN_CONF}.org" ] cp -p "$LNETPLAN_CONF" "${LNETPLAN_CONF}.org"
+		cp -p "$LNETPLAN_CONF" "${LNETPLAN_CONF}.bak"
 	fi
 	
+	$YQ n 'network.version' '2' >"$LNETPLAN_CONF"
+	$YQ w -i "$LNETPLAN_CONF" 'network.renderer' 'NetworkManager'
+
+	LHEADER="--- # $(date) -- This is the netplan config written by ${SCRIPT_NAME}"
+	sed -i "1s/^/${LHEADER}\n/" "$LNETPLAN_CONF"
+	
+	if [ -f "$LNETPLAN_CONF" ]; then
+		[ ! -f "${LNETPLAN_CONF}.org" ] cp -p "$LNETPLAN_CONF" "${LNETPLAN_CONF}.org"
+		cp -p "$LNETPLAN_CONF" "${LNETPLAN_CONF}.bak"
+	fi
+	
+	[ $TEST -lt 1 ] && cat >"$LNETPLAN_CONF" <<-EOF_NETPLANCFG0;
+	# $(date) -- This is the netplan config written by ${SCRIPT_DIR}/${SCRIPT_NAME}
+	network:
+	  version: 2
+	  renderer: NetworkManager
+	EOF_NETPLANCFG0
+	
+	
+}
+
+
+
+########################################################################################
+# netplan_cfg_write()  Write the /etc/netplan/0x-netcfg.yaml file using yq
+########################################################################################
+netplan_cfg_write(){
+	debug_echo "${FUNCNAME} $@"
+	local LDEV="$1"
+	local LADDRESS="$2"
+	local LMACADDR=
+	local LIS_DHCP=0
+	local LIS_PRIMARY=$3
+	local LROUTE=
+	local LGATEWAY=
+	local LNAMESRV0=
+	local LNAMESRV1=
+	local LCONF_FILE=
+	#~ local LDEFCONF_FILE='/etc/netplan/01-netcfg.yaml'
+	local bRet=0
+	local LNETPLAN_USE_ROUTES="$(netplan info | grep -c default-routes)"
+
+	# See if yq is installed, exit if not..
+	yq_check
+
+	local YQ="$(which yq)"
+
+	if [ -z "$YQ" ]; then
+		log_msg "Error: Could not install yq.  ${SCRIPT_NAME} must exit."
+		exit 1
+	fi
+
 	#########################################################################
 	#########################################################################
 	#########################################################################
 	#########################################################################
 	# Work out differences between version 3 & version 4!!!
-	local YQ_VER=$($YQ -V yq -V | sed -r 's/^([^.]+).*$/\1/; s/^[^0-9]*([0-9]+).*$/\1/')
+	local YQ_VER=$($YQ -V | sed -r 's/^([^.]+).*$/\1/; s/^[^0-9]*([0-9]+).*$/\1/')
 	#########################################################################
 	#########################################################################
 	#########################################################################
 	#########################################################################
-	
+
 
 	# Search for our network yaml file 1 level deep
-	LCONF_FILE="$(ubuntu_netplan_cfg_find)"
+	LCONF_FILE="$(netplan_cfg_find)"
 
-	[ $DEBUG -gt 0 ] && error_echo "LCONF_FILE == ${LCONF_FILE}"
-	
+	debug_echo "LCONF_FILE == ${LCONF_FILE}"
+
 	# use yq to modify the yaml file. See: http://mikefarah.github.io/yq/create/  & https://github.com/mikefarah/yq/releases/latest
 	#   Documentation: http://mikefarah.github.io/yq/read/
 
@@ -717,26 +1314,24 @@ ubuntu_netplan_cfg_write(){
 	# Display the details of the interface we're configuring..
 	if [ $QUIET -lt 1 ]; then
 
-		error_echo "Configuring ${LDEV} in ${LCONF_FILE} for:"
-		
+		log_msg "Configuring ${LDEV} in ${LCONF_FILE} for:"
+
 		iface_is_wireless "$LDEV"
 		if [ $? -lt 1 ]; then
 			if [ ! -z "$ESSID" ]; then
-				error_echo "    ESSID: ${ESSID}"
-			fi
-			if [ ! -z "$WPA_PSK" ]; then
-				error_echo "  wpa-psk: ${WPA_PSK}"
+				log_msg "    ESSID: ${ESSID}"
+				log_msg "  wpa-psk: ${WPA_PSK}"
 			fi
 		fi
-		error_echo "  Address: ${LADDRESS}"
-		error_echo "  Gateway: ${LGATEWAY}"
-		error_echo "NameSrvrs: ${LNAMESRV0},${LNAMESRV1}"
+		log_msg "  Address: ${LADDRESS}"
+		log_msg "  Gateway: ${LGATEWAY}"
+		log_msg "NameSrvrs: ${LNAMESRV0},${LNAMESRV1}"
 	fi
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
-	
+
 	# Default Ubuntu 20.04 netplan file: 00-installer-config.yaml
 
 	## This is the network config written by 'subiquity'
@@ -746,16 +1341,25 @@ ubuntu_netplan_cfg_write(){
 	#      dhcp4: true
 	#  version: 2
 	
+	if [ $LNETPLAN_USE_ROUTES -gt 0 ]; then
+		if [ $NUM_DEVICE -gt 0 ]; then
+			LROUTE="$(echo "$LADDRESS" | sed -n 's/\(.\{1,3\}\)\.\(.\{1,3\}\)\.\(.\{1,3\}\)\..*/\1\.\2\.\3\.0\/24/p')"
+		else
+			LROUTE='default'
+		fi
+	fi
+	
+
 	# Is this a wired device??
 	if [ ! -e "/sys/class/net/${LDEV}/wireless" ]; then
 
 		# Delete any existing wired entry for THIS interface..
 		$YQ d -i "$LCONF_FILE" "network.ethernets.${LDEV}"
 
-		if [ $LIS_PRIMARY -lt 1 ]; then
+		#~ if [ $LIS_PRIMARY -lt 1 ]; then
 			# Make any 2ndary wired adapter optional so boot doesn't hang if it's not linked..
 			$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.optional" 'true'
-		fi
+		#~ fi
 
 		# dhcp
 		if [ $LIS_DHCP -gt 0 ]; then
@@ -766,7 +1370,12 @@ ubuntu_netplan_cfg_write(){
 			$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.dhcp4" 'no'
 			$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.dhcp6" 'no'
 			$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.addresses[+]" "${LADDRESS}/24"
-			if [ $LIS_PRIMARY -gt 0 ]; then
+			if [ $LNETPLAN_USE_ROUTES -gt 0 ]; then
+				$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.routes[+].to." "$LROUTE"
+				$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.routes[0].via" "$LGATEWAY"
+				$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.nameservers.addresses[+]" "$LNAMESRV0"
+				$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.nameservers.addresses[+]" "$LNAMESRV1"
+			elif [ $LIS_PRIMARY -gt 0 ]; then
 				# Secondary adapters must not have a gateway or dns-nameservers or the network won't resolve internet addresses..
 				$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.gateway4" "$LGATEWAY"
 				$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.nameservers.addresses[+]" "$LNAMESRV0"
@@ -781,90 +1390,104 @@ ubuntu_netplan_cfg_write(){
 			$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.wakeonlan" 'true'
 		fi
 
-		
-	else	# Wireless
+	else	# Wireless !!
 		# Delete any existing wifi entry for the interface..
 		$YQ d -i "$LCONF_FILE" "network.wifis.${LDEV}"
-
-		# Make the wifi interface optional...i.e. don't hang at boot time if not present..
-		$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.optional" 'true'
-
-		if [ "$LADDRESS" == 'dhcp' ]; then
-			$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.dhcp4" 'true'
-		else
 		
-			$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.dhcp4" 'no'
-			$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.dhcp6" 'no'
-			$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.addresses[+]" "${LADDRESS}/24"
+		# Give up if there's no SSID..
+		if [ ! -z "$ESSID" ] || [ $FORCE -gt 0 ]; then
 
-			if [ $LIS_PRIMARY -gt 0 ]; then
-				# Secondary adapters must not have a gateway or dns-nameservers or the network won't resolve internet addresses..
-				$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.gateway4" "$LGATEWAY"
-				$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.nameservers.addresses[+]" "$LNAMESRV0"
-				$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.nameservers.addresses[+]" "$LNAMESRV1"
+			# Make the wifi interface optional...i.e. don't hang at boot time if not present..
+			$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.optional" 'true'
+
+			if [ "$LADDRESS" == 'dhcp' ]; then
+				$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.dhcp4" 'true'
+			else
+
+				$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.dhcp4" 'no'
+				$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.dhcp6" 'no'
+				$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.addresses[+]" "${LADDRESS}/24"
+
+				if [ $LNETPLAN_USE_ROUTES -gt 0 ]; then
+					$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.routes[+].to." "$LROUTE"
+					$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.routes[0].via" "$LGATEWAY"
+					$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.nameservers.addresses[+]" "$LNAMESRV0"
+					$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.nameservers.addresses[+]" "$LNAMESRV1"
+				elif [ $LIS_PRIMARY -gt 0 ]; then
+					# Secondary adapters must not have a gateway or dns-nameservers or the network won't resolve internet addresses..
+					$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.gateway4" "$LGATEWAY"
+					$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.nameservers.addresses[+]" "$LNAMESRV0"
+					$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.nameservers.addresses[+]" "$LNAMESRV1"
+				fi
 			fi
-		fi
 
-		if [ -z "$ESSID" ]; then
-			# Generate a fake random SSID
-			ESSID="$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
-			#~ ESSID='SOMESSID'
-		fi
+			if [ -z "$ESSID" ]; then
+				# Generate a fake random SSID
+				ESSID="$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)"
+				#~ ESSID='SOMESSID'
+			fi
 
-		if [ ! -z "$WPA_PSK" ]; then
-			error_echo "WPA_PSK == ${WPA_PSK}"
-			#~ $YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.access-points.${ESSID}.password" "\"${WPA_PSK}\""
-			# This issue is fixed in yq version 3.2.1
-			$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.access-points.${ESSID}.password" "${WPA_PSK}"
-			# Fixup yq's mangling of numeric password data..
-			#~ sed -i -e "s/password:.*/password: ${WPA_PSK}/" "$LCONF_FILE"
+			if [ ! -z "$WPA_PSK" ]; then
+				log_msg "WPA_PSK == ${WPA_PSK}"
+				#~ $YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.access-points.${ESSID}.password" "\"${WPA_PSK}\""
+				# This issue is fixed in yq version 3.2.1
+				$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.access-points.${ESSID}.password" "${WPA_PSK}"
+				# Fixup yq's mangling of numeric password data..
+				#~ sed -i -e "s/password:.*/password: ${WPA_PSK}/" "$LCONF_FILE"
+			else
+				$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.access-points.${ESSID}" '{}'
+			fi
 		else
-			$YQ w -i "$LCONF_FILE" "network.wifis.${LDEV}.access-points.${ESSID}" '{}'
+			[ $QUIET -lt 1 ] && log_msg "Skipping creating a netplan wifi definition for ${LDEV} since no SSID is specified."
 		fi
 	fi
 
 	# Make any required fixes to the yaml file
 
 	if [ $(grep -c "'{}'" "$LCONF_FILE") -gt 0 ]; then
-		error_echo "Fixing up ${LCONF_FILE}.."
+		log_msg "Fixing up ${LCONF_FILE}.."
 		sed -i -e 's/\x27{}\x27/{}/g' "$LCONF_FILE"
 	fi
-	
+
 	# Insert our comment into the yaml file..
 	# This is the network config written by 'subiquity'
 
-	local LCOMMENT="# This is the network config written by '${SCRIPT}'"
-	
+	local LCOMMENT="# $(date): This is the network config written by '${SCRIPT_NAME}'"
+
 	# Delete any existing config ownership comments..
 	sed -i -e '/^# This is the network config written by/d' "$LCONF_FILE"
-	
+
 	# Insert our comment at the head of the file..
 	sed -i "1 i\\${LCOMMENT}" "$LCONF_FILE"
-	
+
 	# This is just a backup file, showing the config we're trying..
-	cp "$LCONF_FILE" "${LCONF_FILE}.try"
+	cp -p "$LCONF_FILE" "${LCONF_FILE}.try"
 
 	# Validate each pass while constructing the yaml
 	$YQ read "$LCONF_FILE" >/dev/null 2>&1
 	bRet=$?
-	
+
 	if [ $bRet -gt 0 ] || [ $VERBOSE -gt 0 ]; then
-		error_echo '============================================================='
-		error_echo "yq read of ${LCONF_FILE} returned ${bRet}"
-		error_echo "Netplan File: ${LCONF_FILE}"
+		log_msg '============================================================='
+		log_msg "yq read of ${LCONF_FILE} returned ${bRet}"
+		log_msg "Netplan File: ${LCONF_FILE}"
 		$YQ read --verbose "$LCONF_FILE"
-		error_echo '============================================================='
+		log_msg '============================================================='
 		yamllint -f parsable "$LCONF_FILE"
 	fi
+	
+	((NUM_DEVICE++))
+
 
 	return $bRet
 
 }
 
 ########################################################################################
-# ubuntu_netplan_failsafe_write()  Write the /etc/netplan/0x-netcfg.yaml.failsafe file using yq
+# netplan_failsafe_write()  Write the /etc/netplan/0x-netcfg.yaml.failsafe file using yq
 ########################################################################################
-ubuntu_netplan_failsafe_write(){	
+netplan_failsafe_write(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LDEVS=
 	local LDEV=
 	local LADDRESS=
@@ -874,15 +1497,13 @@ ubuntu_netplan_failsafe_write(){
 	local LNAMESRV1=
 	local LCONF_FILE=
 
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
-	
 	# See if yq is installed, exit if not..
 	yq_check
 
 	local YQ="$(which yq)"
-	
+
 	if [ -z "$YQ" ]; then
-		error_echo "Error: Could not install yq.  ${SCRIPTNAME} must exit."
+		log_msg "Error: Could not install yq.  ${SCRIPT_NAME} must exit."
 		exit 1
 	fi
 
@@ -891,21 +1512,21 @@ ubuntu_netplan_failsafe_write(){
 	#########################################################################
 	#########################################################################
 	# Work out differences between version 3 & version 4!!!
-	local YQ_VER=$($YQ -V yq -V | sed -r 's/^([^.]+).*$/\1/; s/^[^0-9]*([0-9]+).*$/\1/')
+	local YQ_VER=$($YQ -V | sed -r 's/^([^.]+).*$/\1/; s/^[^0-9]*([0-9]+).*$/\1/')
 	#########################################################################
 	#########################################################################
 	#########################################################################
 	#########################################################################
-	
+
 	# Search for our network yaml file 1 level deep
-	LCONF_FILE="$(ubuntu_netplan_cfg_find)"
+	LCONF_FILE="$(netplan_cfg_find)"
 
 	#########################################################################
-	
+
 	LCONF_FILE="${LCONF_FILE}.failsafe"
-	
-	[ $DEBUG -gt 0 ] && error_echo "LCONF_FILE == ${LCONF_FILE}"
-	
+
+	debug_log "LCONF_FILE == ${LCONF_FILE}"
+
 	LDEV="$(iface_primary_getb)"
 
 	iface_is_wired "$LDEV"
@@ -922,29 +1543,28 @@ ubuntu_netplan_failsafe_write(){
 			fi
 		done
 	fi
-	
-	
+
+
 	if [ $LIS_PRIMARY -lt 1 ]; then
-		error_echo "Could not find primary wired network interface."
+		log_msg "Could not find primary wired network interface."
 		return 1
 	fi
-	
+
 	# This will be our predictable subnet & address for failsafe..
 	LADDRESS="192.168.0.$(default_octet_get)"
 	LGATEWAY=$(echo $LADDRESS | sed -e 's/^\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)/\1.\2.\3.1/g')
 	# Google's dns servers..
 	LNAMESRV0='8.8.8.8'
 	LNAMESRV1='8.8.4.4'
-	
-	if [ $QUIET -lt 1 ]; then
 
-		error_echo "Configuring ${LDEV} failsafe for:"
-		error_echo "  Address: ${LADDRESS}"
-		error_echo "  Gateway: ${LGATEWAY}"
-		error_echo "NameSrvrs: ${LNAMESRV0},${LNAMESRV1}"
+	if [ $QUIET -lt 1 ]; then
+		log_msg "Configuring ${LDEV} in ${LCONF_FILE} for:"
+		log_msg "  Address: ${LADDRESS}"
+		log_msg "  Gateway: ${LGATEWAY}"
+		log_msg "NameSrvrs: ${LNAMESRV0},${LNAMESRV1}"
 	fi
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
 
@@ -963,10 +1583,10 @@ ubuntu_netplan_failsafe_write(){
 	$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.gateway4" "$LGATEWAY"
 	$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.nameservers.addresses[+]" "$LNAMESRV0"
 	$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.nameservers.addresses[+]" "$LNAMESRV1"
-	
+
 	if [ $VERBOSE -gt 0 ]; then
-		error_echo "Netplan Failsafe File: ${LCONF_FILE}"
-		cat "$LCONF_FILE"
+		log_msg "Netplan Failsafe File: ${LCONF_FILE}"
+		log_cat "$LCONF_FILE"
 	fi
 
 	# Validate the yaml
@@ -976,74 +1596,76 @@ ubuntu_netplan_failsafe_write(){
 }
 
 ########################################################################################
-# ubuntu_netplan_apply()  exec a netplan apply or netplan try
+# netplan_apply()  exec a netplan apply or netplan try
 ########################################################################################
-ubuntu_netplan_apply(){
+netplan_apply(){
 	# This step should result in netplan creating a file in:
 	#	/run/systemd/network
 	# ..with the name ${NUM}-netplan-${DEVNAME}.network
 	# .. to be used by systemd-networkd
 	netplan --debug generate
 	systemctl daemon-reload
-	
+
 	if [ $NETPLAN_TRY -gt 0 ]; then
 		netplan try
 	else
 		netplan apply
 	fi
-	
+
 	if [ $DEBUG -gt 0 ]; then
 		local YQ="$(which yq)"
-		local LCFG="$(ubuntu_netplan_cfg_find)"
-		error_echo "$Contents of {LCFG}:"
+		local LCFG="$(netplan_cfg_find)"
+		log_msg "$Contents of {LCFG}:"
 		$YQ read --verbose "$LCFG"
-		cat "$LCFG"
+		debug_cat "$LCFG"
 	fi
-	
+
 }
 
 ########################################################################################
 # acpi_events_failsafe_write()  Write the acpi event file to trigger network failsafe
 ########################################################################################
 acpi_events_failsafe_write(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LCONF_FILE='/etc/acpi/events/net_failsafe'
-	
+
 	if [ -f "$LCONF_FILE" ]; then
 		rm -f "$LCONF_FILE"
 	fi
-	
-	cat >>"$LCONF_FILE" <<CONF1;
-event=jack/linein LINEIN plug
-action=/usr/local/sbin/config-failsafe-network.sh "%e"
-CONF1
+
+	cat >>"$LCONF_FILE" <<-CONF1;
+	event=jack/linein LINEIN plug
+	action=/usr/local/sbin/config-failsafe-network.sh "%e"
+	CONF1
 
 	LCONF_FILE="${LCONF_FILE}_undo"
-	cat >>"$LCONF_FILE" <<CONF2;
-event=jack/microphone MICROPHONE plug
-action=/usr/local/sbin/config-failsafe-network.sh "%e" --undo
-CONF2
-	
+	cat >>"$LCONF_FILE" <<-CONF2;
+	event=jack/microphone MICROPHONE plug
+	action=/usr/local/sbin/config-failsafe-network.sh "%e" --undo
+	CONF2
+
 }
 
 
 fedora_iface_cfg_value_write(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LNET_SCRIPT="$1"
 	local LKEY="$2"
 	local LVALUE="$3"
-	
+
 	# If null value, delete the line with the key
 	if [ -z "$LVALUE" ]; then
-		#~ sed '{[/]<n>|<string>|<regex>[/]}d' <fileName> 
+		#~ sed '{[/]<n>|<string>|<regex>[/]}d' <fileName>
 		sed -i "/^${LKEY}=.*\$/d" "$LNET_SCRIPT"
 		return 0
 	fi
 
-	if [ $(egrep -c "${LKEY}=" "$LNET_SCRIPT") -gt 0 ]; then
+	if [ $(grep -c "${LKEY}=" "$LNET_SCRIPT") -gt 0 ]; then
 		sed -i "s/^${LKEY}=.*\$/${LKEY}=${LVALUE}/" "$LNET_SCRIPT"
 	else
 		echo "${LKEY}=${LVALUE}" >>"$LNET_SCRIPT"
 	fi
-	
+
 }
 
 ########################################################################################
@@ -1056,7 +1678,8 @@ fedora_iface_cfg_value_write(){
 #
 ########################################################################################
 
-fedora_iface_cfg_write(){	
+fedora_iface_cfg_write(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LDEV="$1"
 	local LADDRESS="$2"
 	local LNET_SCRIPT=
@@ -1070,8 +1693,6 @@ fedora_iface_cfg_write(){
 	local LDNS2=
 	local LDNS3=
 	local LNETMASK=
-
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
 
 	#Skip devices beginning with "w" as they're wireless..
 	if [[ "$LDEV" == w* ]]; then
@@ -1106,7 +1727,7 @@ fedora_iface_cfg_write(){
 	echo "Broadcast: ${LBRDCAST}"
 	echo "NameSrvrs: ${LNAMESRV}"
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
 
@@ -1130,11 +1751,11 @@ fedora_iface_cfg_write(){
 	#~ IPADDR=1.2.3.4
 	#~ NETMASK=255.255.255.0
 	#~ GATEWAY=4.3.2.1
-	#~ DNS1=114.114.114.114	
+	#~ DNS1=114.114.114.114
 
 	# Associative array of iface keys and values
 	declare -A ACFG
-	
+
 	ACFG['TYPE']='Ethernet'
 	ACFG['NM_CONTROLLED']='no'
 	ACFG['PROXY_METHOD']='none'
@@ -1168,11 +1789,12 @@ fedora_iface_cfg_write(){
 		echo "value: ${LVALUE}"
 		echo fedora_iface_cfg_value_write "$LNET_SCRIPT" "$LKEY" "$LVALUE"
 	done
-	
+
 	return 0
 }
 
 fedora_iface_failsafe_write(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LDEV="$1"
 	local LADDRESS=
 	local LNET_SCRIPT=
@@ -1183,12 +1805,12 @@ fedora_iface_failsafe_write(){
 	local LNETWORK=
 	local LHOSTSAL=
 	local LBRDCAST=
-	
+
 	LNET_SCRIPT="/etc/sysconfig/network-scripts/ifcfg-${LDEV}"
 	LFAILSAFE_SCRIPT="${LNET_SCRIPT}.failsafe"
 
 	cp -p "$LNET_SCRIPT" "$LFAILSAFE_SCRIPT"
-	
+
 	LADDRESS="192.168.0.$(default_octet_get)"
 	LGATEWAY=$(echo $LADDRESS | sed -e 's/^\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)/\1.\2.\3.1/g')
 	LNETWORK=$(echo $LADDRESS | sed -e 's/^\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)\.\([[:digit:]]\{1,3\}\)/\1.\2.\3.0/g')
@@ -1210,7 +1832,7 @@ fedora_iface_failsafe_write(){
 		echo "value: ${LVALUE}"
 		echo fedora_iface_cfg_value_write "$LFAILSAFE_SCRIPT" "$LKEY" "$LVALUE"
 	done
-	
+
 	return 0
 }
 
@@ -1220,8 +1842,9 @@ fedora_iface_failsafe_write(){
 # See also https://www.raspberrypi.org/forums/viewtopic.php?t=199860
 #  In particular flush the IFACE to get rid of old IP addresses
 dhcpcd_cfg_write(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LCONF_FILE='/etc/dhcpcd.conf'
-	
+
 }
 
 
@@ -1230,9 +1853,9 @@ dhcpcd_cfg_write(){
 #########################################################################################
 
 firewall_stop(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
-	[ $VERBOSE -gt 0 ] && error_echo "Stopping and disabling the firewall.."
-	if [ $FAKE -gt 0 ]; then
+	debug_echo "${FUNCNAME}( $@ )"
+	[ $VERBOSE -gt 0 ] && log_msg "Stopping and disabling the firewall.."
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
 
@@ -1266,8 +1889,8 @@ firewall_stop(){
 # firewall_start() Enable and restart the firewall
 #########################################################################################
 firewall_start(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
-	[ $VERBOSE -gt 0 ] && error_echo "Enabling and starting the firewall.."
+	debug_echo "${FUNCNAME}( $@ )"
+	[ $VERBOSE -gt 0 ] && log_msg "Enabling and starting the firewall.."
 	if [ $IS_FEDORA -gt 0 ]; then
 		systemctl start firewalld.service
 	else
@@ -1280,23 +1903,30 @@ firewall_start(){
 # network_stop()  Stop the network..
 #########################################################################################
 network_stop(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
-	[ $VERBOSE -gt 0 ] && error_echo "Stopping the network service.."
+	debug_echo "${FUNCNAME}( $@ )"
+	[ $QUIET -lt 1 ] && log_msg "Stopping the network service.."
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
 
-
-	if [ $IS_FEDORA -gt 0 ]; then
-		systemctl stop network.service
-	else
-		systemctl stop systemd-networkd.service
+	if [ $IS_NETWORKD -gt 0 ]; then
+		if [ $IS_FEDORA -gt 0 ]; then
+			systemctl stop network.service
+		else
+			systemctl stop systemd-networkd.socket
+			systemctl stop systemd-networkd.service
+		fi
+	elif [ $IS_NETWORKMNGR -gt 0 ]; then
+		nmcli networking off
+	elif [ $IS_NETINTERFACES -gt 0 ]; then
+		/etc/init.d/networking stop
 	fi
 }
 
 
 resolv_conf_fix(){
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $IS_FEDORA -lt 1 ]; then
 		# Fixup the resolv.conf file..  Modifications are only made if resolv.conf is not a symbolic link.
 		/usr/local/sbin/config-resolv.sh
@@ -1307,20 +1937,77 @@ resolv_conf_fix(){
 # network_start()  Start the network..
 #########################################################################################
 network_start(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
-	[ $VERBOSE -gt 0 ] && error_echo "Restarting the network service.."
+	debug_echo "${FUNCNAME}( $@ )"
+	[ $QUIET -lt 1 ] && log_msg "Starting the network service.."
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
+	
+	systemctl daemon-reload
 
-	if [ $IS_FEDORA -gt 0 ]; then
-		systemctl restart network.service
-	else
-		# Fixup the resolv.conf file..  Modifications are only made if resolv.conf is not a symbolic link.
-		resolv_conf_fix
-		# Restart the network..
-		systemctl restart systemd-networkd.service
+	if [ $IS_NETWORKD -gt 0 ]; then
+		if [ $IS_FEDORA -gt 0 ]; then
+			systemctl restart network.service
+		else
+			# Fixup the resolv.conf file..  Modifications are only made if resolv.conf is not a symbolic link.
+			resolv_conf_fix
+			# Restart the network..
+			systemctl restart systemd-networkd.service
+			#~ systemctl restart systemd-networkd.socket
+		fi
+	elif [ $IS_NETWORKMNGR -gt 0 ]; then
+		nmcli networking on
+	elif [ $IS_NETINTERFACES -gt 0 ]; then
+		/etc/init.d/networking restart
+	fi
+
+}
+
+#########################################################################################
+# network_restart()  Stop then restart the network..
+#########################################################################################
+network_restart(){
+	debug_echo "${FUNCNAME}( $@ )"
+
+	[ $QUIET -lt 1 ] && log_msg "Restarting the network service.."
+
+	if [ $TEST -gt 0 ]; then
+		return 0
+	fi
+	
+	if [ $IS_NETWORKD -gt 0 ]; then
+		if [ $IS_FEDORA -gt 0 ]; then
+			systemctl stop network.service
+		else
+			systemctl stop systemd-networkd.socket
+			systemctl stop systemd-networkd.service
+		fi
+	elif [ $IS_NETWORKMNGR -gt 0 ]; then
+		nmcli networking off
+	elif [ $IS_NETINTERFACES -gt 0 ]; then
+		/etc/init.d/networking stop
+	fi
+	
+	[ $QUIET -lt 1 ] && log_msg "Waiting 5 seconds to restart the network.."
+	sleep 5
+
+	systemctl daemon-reload
+
+	if [ $IS_NETWORKD -gt 0 ]; then
+		if [ $IS_FEDORA -gt 0 ]; then
+			systemctl restart network.service
+		else
+			# Fixup the resolv.conf file..  Modifications are only made if resolv.conf is not a symbolic link.
+			resolv_conf_fix
+			# Restart the network..
+			systemctl restart systemd-networkd.service
+			#~ systemctl restart systemd-networkd.socket
+		fi
+	elif [ $IS_NETWORKMNGR -gt 0 ]; then
+		nmcli networking on
+	elif [ $IS_NETINTERFACES -gt 0 ]; then
+		/etc/init.d/networking restart
 	fi
 
 }
@@ -1330,10 +2017,10 @@ network_start(){
 # netatalk_fix()  If netatalk is installed AND CONFIGURED, then reconfigure it..
 #########################################################################################
 netatalk_fix(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR0="$1"
 	local LIPADDR1="$2"
-	
+
 	local LCONF_FILE='/usr/local/etc/afp.conf'
 	local IPADR=''
 	local LHOSTSALLOW=''
@@ -1343,13 +2030,13 @@ netatalk_fix(){
 		return 1
 	fi
 
-	[ $QUIET -lt 1 ] && error_echo "Configuring netatalk for ${LIPADDR0} ${LIPADDR1}"
+	[ $QUIET -lt 1 ] && log_msg "Configuring netatalk for ${LIPADDR0} ${LIPADDR1}"
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
 
-	if [ $(egrep -c '^hosts allow =.*$' "$CONF_FILE") -gt 0 ]; then
+	if [ $(grep -c -E '^hosts allow =.*$' "$CONF_FILE") -gt 0 ]; then
 
 		if [-z "$LIPADDR0" ]; then
 			LIPADDR0=$(ipaddr_primary_get)
@@ -1368,7 +2055,7 @@ netatalk_fix(){
 			systemctl stop netatalk
 		fi
 
-		[ $QUIET -lt 1 ] && error_echo "Updating ${LCONF_FILE} with hosts allow = ${LHOSTSALLOW}"
+		[ $QUIET -lt 1 ] && log_msg "Updating ${LCONF_FILE} with hosts allow = ${LHOSTSALLOW}"
 		#hosts allow = 192.168.0.0/16
 		sed -i "s/^hosts allow = .*$/hosts allow = ${LHOSTSALLOW}/" "$LCONF_FILE"
 
@@ -1386,25 +2073,25 @@ netatalk_fix(){
 # samba_fix()  If samba is installed, then update the hosts allow = with our subnets
 #########################################################################################
 samba_fix(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME} $@"
 	local LIPADDR0="$1"
 	local LIPADDR1="$2"
 	local LCONF_FILE='/etc/samba/smb.conf'
 	local LHOSTSALLOW=''
 
 	if [ ! -f "$LCONF_FILE" ]; then
-		[ $VERBOSE -gt 0 ] && error_echo "${FUNCNAME} ERROR: ${LCONF_FILE} not found.  Is samba service configured?"
+		[ $VERBOSE -gt 0 ] && log_msg "${FUNCNAME} ERROR: ${LCONF_FILE} not found.  Is samba service configured?"
 		return 1
 	fi
 
-	[ $QUIET -lt 1 ] && error_echo "Configuring samba for ${LIPADDR0} ${LIPADDR1}"
-	
-	if [ $FAKE -gt 0 ]; then
+	[ $QUIET -lt 1 ] && log_msg "Configuring samba for ${LIPADDR0} ${LIPADDR1}"
+
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
 
-	if [ $(egrep -c '^.*hosts allow =.*$' "$LCONF_FILE") -lt 1 ]; then
-		error_echo "Cannot find hosts allow entry in ${LCONF_FILE}"
+	if [ $(grep -c -E '^.*hosts allow =.*$' "$LCONF_FILE") -lt 1 ]; then
+		log_msg "Cannot find hosts allow entry in ${LCONF_FILE}"
 		return 1
 	else
 		if [ -z "$LIPADDR0" ]; then
@@ -1416,7 +2103,7 @@ samba_fix(){
 		if [ -z "$LIPADDR1" ]; then
 			[ $MULTI_NICS -gt 0 ] && LIPADDR1=$(ipaddr_secondary_getb)
 		fi
-		
+
 		if [ ! -z "$LIPADDR1" ]; then
 			LHOSTSALLOW="${LHOSTSALLOW}, ${LIPADDR1%.*}."
 		fi
@@ -1426,15 +2113,15 @@ samba_fix(){
 			systemctl stop smbd
 		fi
 
-		[ $QUIET -lt 1 ] && error_echo "Updating ${LCONF_FILE} with hosts allow = 127., ${LHOSTSALLOW}"
+		[ $QUIET -lt 1 ] && log_msg "Updating ${LCONF_FILE} with hosts allow = 127., ${LHOSTSALLOW}"
 		sed -i "s/^.*hosts allow = .*$/\thosts allow = 127., ${LHOSTSALLOW}/" "$LCONF_FILE"
 
 		sleep 5
 
 		systemctl start smbd
-		
+
 		sleep 2
-		
+
 		[ $VERBOSE -gt 0 ] && systemctl -l --no-pager status smbd
 
 	fi
@@ -1445,7 +2132,7 @@ samba_fix(){
 # minidlna_fix()  If minidlna is installed, then update the network_interface= with our nics
 #########################################################################################
 minidlna_fix(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LDEV0="$1"
 	local LDEV1="$2"
 
@@ -1454,16 +2141,16 @@ minidlna_fix(){
 
 
 	if [ ! -f "$LCONF_FILE" ]; then
-		[ $VERBOSE -gt 0 ] && error_echo "${FUNCNAME} ERROR: ${LCONF_FILE} not found.  Is minidlna service configured?"
+		[ $VERBOSE -gt 0 ] && log_msg "${FUNCNAME} error: ${LCONF_FILE} not found.  Is minidlna service configured?"
 		return 1
 	fi
 
-	[ $QUIET -lt 1 ] && error_echo "Configuring minidlna for ${LDEV0} ${LDEV1}"
+	[ $QUIET -lt 1 ] && log_msg "Configuring minidlna for ${LDEV0} ${LDEV1}"
 
-	if [ $FAKE -gt 0 ]; then
+	if [ $TEST -gt 0 ]; then
 		return 0
 	fi
-	
+
 	if [ -z "$LDEV0" ]; then
 		LDEVS_ALLOW="$(ifaces_get)"
 		LDEVS_ALLOW="$(echo "$LDEVS_ALLOW" | sed -e 's/ /, /g')"
@@ -1478,7 +2165,7 @@ minidlna_fix(){
 		systemctl stop minidlna
 	fi
 
-	[ $QUIET -lt 1 ] && error_echo "Updating ${LCONF_FILE} with network_interface=${LDEVS_ALLOW}"
+	[ $QUIET -lt 1 ] && log_msg "Updating ${LCONF_FILE} with network_interface=${LDEVS_ALLOW}"
 
 	#network_interface=eth0
 	sed -i "s/^.*network_interface=.*$/network_interface=${LDEVS_ALLOW}/" "$LCONF_FILE"
@@ -1503,9 +2190,7 @@ minidlna_fix(){
 ########################################################################################
 ########################################################################################
 
-error_echo '===================================================================='
-error_echo "${SCRIPT_DIR}/${SCRIPT} ${@}"
-error_echo '===================================================================='
+DISP_ARGS="${SCRIPT_NAME} ${@}"
 
 # cmd line args...
 # --iface
@@ -1520,21 +2205,21 @@ LONGARGS="help,
 debug,
 quiet,
 verbose,
+test,
+force,
+log,
 logfile:,
 no-pause,
 min,minimal,
+public,
+apps,fwapps,no-apps,no-fwapps,
 pri-only,
 primary-only,
 netcfg-only,
 testping,
-test,
-try,
-netplan-try,
-update-yq,
+try,netplan-try,
 netplan-no-try,
-notest,
-fake,
-nofake,
+update-yq,
 all,allnics,all-nics,
 wireless,
 iface:,nic:,
@@ -1545,7 +2230,9 @@ address:,addr:,ip:,address0:,addr0:,ip0:,primary-ip:,
 address1:,addr1:,ip1:,secondary-ip:,
 ssid:,essid:,
 psk:,wpa-psk:,
-min,minimal,
+netatalk,
+NetworkManager,
+no-firewall,
 firewall-iface:"
 
 # Remove line-feeds..
@@ -1554,50 +2241,54 @@ LONGARGS="$(echo "$LONGARGS" | sed ':a;N;$!ba;s/\n//g')"
 
 ARGS=$(getopt -o "$SHORTARGS" -l "$LONGARGS"  -n "$(basename $0)" -- "$@")
 
+if [ $? -gt 0 ]; then
+	disp_help "$SCRIPT_DESC"
+	exit 1
+fi
+
 eval set -- "$ARGS"
 
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-h|--help)
-			echo "${SCRIPTNAME} [--primary-only] [--netcfg-only] [--iface0=net_device] [--ip0=ip_address|dhcp] [--iface1=net_device] [--ip1=ip_address|dhcp] [--ssid=wifi-ssid] [--wpa-psk=wifi-passkey] [--firewall-iface=devname]"
+			disp_help "$SCRIPT_DESC"
+			#~ echo "${SCRIPT_NAME} [--primary-only] [--netcfg-only] [--iface0=net_device] [--ip0=ip_address|dhcp] [--iface1=net_device] [--ip1=ip_address|dhcp] [--ssid=wifi-ssid] [--wpa-psk=wifi-passkey] [--firewall-iface=devname]"
 			exit 0
 			;;
-		--debug)
-			DEBUG=1
+		-d|--debug)
+			((DEBUG++))
 			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --debug"
 			;;
-		--verbose)
-			VERBOSE=1
+		-v|--verbose)
+			((VERBOSE++))
 			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --verbose"
 			;;
-		--quiet)
+		-q|--quiet)
 			QUIET=1
 			VERBOSE=0
 			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --quiet"
 			;;
-		--force)
+		-f|--force)
 			FORCE=1
 			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --force"
 			;;
-		-t|--test|--fake)
+		-t|--test)
 			VERBOSE=1;
-			FAKE=1;
 			TEST=1
 			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --test"
 			;;
-		--notest)
-			TEST=0
-			;;
-		--logfile)
-			shift
-			INST_LOGFILE="$1"
+		-l|--log)
 			LOG=1
+			log_msg_dir_create "$SCRIPT_LOG"
+			;;
+		-L|--logfile)
+			LOG=1
+			shift
+			SCRIPT_LOG="$1"
+			log_msg_dir_create "$SCRIPT_LOG"
 			;;
 		--testping)
 			TESTPING=1
-			;;
-		--notest|--nofake)
-			FAKE=0;
 			;;
 		--try|netplan-try)
 			NETPLAN_TRY=1
@@ -1650,8 +2341,26 @@ while [ $# -gt 0 ]; do
 			shift
 			WPA_PSK="$1"
 			;;
+		--NetworkManager)	# Install NetworkManager and disable systemd-networkd
+			INST_NETWORKMNGR=1
+			;;
+		--netatalk)			# Fix interface settings for deprecated netatalk service
+			FIX_NETATALK=1
+			;;
+		--no-firewall)
+			NO_FIREWALL=1
+			;;
 		--min|--minimal)
 			FIREWALL_MINIMAL=1
+			;;
+		--public)
+			FIREWALL_PUBLIC=1
+			;;
+		--apps|--fwapps)
+			FIREWALL_USE_APPS=1
+			;;
+		--no-apps|--no-fwapps)
+			FIREWALL_USE_APPS=0
 			;;
 		--firewall-iface)
 			shift
@@ -1681,7 +2390,7 @@ while [ $# -gt 0 ]; do
 						IPADDR1="$1"
 					fi
 				else
-					error_echo "Error: ${1} is not a valid NIC name or ip address.."
+					log_msg "Error: ${1} is not a valid NIC name or ip address.."
 					exit 1
 				fi
 			fi
@@ -1690,10 +2399,20 @@ while [ $# -gt 0 ]; do
    shift
 done
 
-[ $VERBOSE -gt 0 ] && error_echo "Configuring network..."
+log_msg '===================================================================='
+log_msg "${DISP_ARGS}"
+log_msg '===================================================================='
+
+
+[ $VERBOSE -gt 0 ] && log_msg "Configuring network..."
 
 # Before we do anything else, install any needed dependencies..
 dependencies_check
+
+#~ # If we're switching to NetworkManager from systemd-networkd
+#~ if [ $INST_NETWORKMNGR -gt 0 ]; then
+
+#~ fi
 
 # If we're configuring more than one interface...
 #   Get the count of interfaces..
@@ -1712,12 +2431,11 @@ if [ ! -z "$ESSID" ]; then
 	wpa_supplicant_info_save "$ESSID" "$WPA_PSK"
 fi
 
-
 # Primary network interface...check or fetch device names
 if [ ! -z "$NETDEV0" ]; then
 	iface_is_valid "$NETDEV0"
 	if [ $? -gt 0 ]; then
-		error_echo "Error: network interface ${NETDEV0} does not exist.."
+		log_msg "Error: network interface ${NETDEV0} does not exist.."
 		exit 1
 	fi
 else
@@ -1731,7 +2449,7 @@ case "$IPADDR0" in
 		IPADDR0=$(iface_ipaddress_get "$NETDEV0")
 
 		if [ -z "$IPADDR0" ]; then
-			error_echo "Error: could not get an ip address for ${NETDEV0}.."
+			log_msg "Error: could not get an ip address for ${NETDEV0}.."
 			exit 1
 		fi
 
@@ -1744,12 +2462,12 @@ case "$IPADDR0" in
 	*)
 		ipaddress_validate "$IPADDR0"
 		if [ $? -gt 0 ]; then
-			error_echo "Error: ${IPADDR0} is not a valid IP address.."
+			log_msg "Error: ${IPADDR0} is not a valid IP address.."
 			exit 1
 		fi
 		;;
 esac
-error_echo "Setting primary interface ${NETDEV0} to ${IPADDR0}."
+[ $QUIET -lt 1 ] && log_msg "Setting primary interface ${NETDEV0} to ${IPADDR0}."
 
 # Secondary network interface..
 if [ $MULTI_NICS -gt 0 ]; then
@@ -1757,7 +2475,7 @@ if [ $MULTI_NICS -gt 0 ]; then
 	if [ ! -z "$NETDEV1" ]; then
 		iface_is_valid "$NETDEV1"
 		if [ $? -gt 0 ]; then
-			error_echo "Error: network interface ${NETDEV1} does not exist.."
+			log_msg "Error: network interface ${NETDEV1} does not exist.."
 			# Ignore the error and continue so the primary iface is configured..
 			NETDEV1=''
 			MULTI_NICS=0
@@ -1781,12 +2499,12 @@ if [ $MULTI_NICS -gt 0 ]; then
 		*)
 			ipaddress_validate "$IPADDR1"
 			if [ $? -gt 0 ]; then
-				error_echo "Error: ${IPADDR1} is not a valid IP address.."
+				log_msg "Error: ${IPADDR1} is not a valid IP address.."
 				exit 1
 			fi
 			;;
 	esac
-	error_echo "Setting secondary interface ${NETDEV1} to ${IPADDR1}."
+	[ $QUIET -lt 1 ] && log_msg "Setting secondary interface ${NETDEV1} to ${IPADDR1}."
 
 fi
 
@@ -1806,52 +2524,94 @@ fi
 firewall_stop
 
 # Stop the network??
+#[ $IS_FEDORA -gt 0 ] || [ $IS_NETPLAN -lt 1 ] && network_stop
+
 network_stop
 
+#################################################################################################################################
 # Write the primary interface..
-if [ $IS_FEDORA -gt 0 ]; then
-	fedora_iface_cfg_write "$NETDEV0" "$IPADDR0" 1
-else
-	if [ $IS_NETPLAN -gt 0 ]; then
-		ubuntu_netplan_failsafe_write
-		ubuntu_netplan_cfg_write 'CLEAR_ALL'
-		ubuntu_netplan_cfg_write "$NETDEV0" "$IPADDR0" 1
-		if [ $? -gt 0 ]; then
-			error_exit "${SCRIPTNAME} failed to produce valid yaml netplan file. Exiting."
-		fi
+#################################################################################################################################
+if [ $IS_DHCPCD -gt 0 ]; then
+	log_msg "Error: Network configuration for dhcpcd.service is not currently supported.  Exiting."
+	exit 1
+
+elif [ $IS_NETWORKMNGR -gt 0 ]; then
+	networkmanager_iface_set "$NETDEV0" "$IPADDR0" "$ESSID" "$WPA_PSK"
+
+elif [ $IS_NETINTERFACES -gt 0 ]; then
+
+	if [ $IS_FEDORA -gt 0 ]; then
+		fedora_iface_cfg_write "$NETDEV0" "$IPADDR0" 1
 	else
 		ubuntu_iface_failsafe_write
 		ubuntu_iface_cfg_write "$NETDEV0" "$IPADDR0" 1
 	fi
-fi
 
-# Write the secondary interface..
-if [ $MULTI_NICS -gt 0 ]; then
-	if [ ! -z "$NETDEV1" ]; then
-		if [ $IS_FEDORA -gt 0 ]; then
-			fedora_iface_cfg_write "$NETDEV1" "$IPADDR1" 0
-		else
-			if [ $IS_NETPLAN -gt 0 ]; then
-				ubuntu_netplan_cfg_write "$NETDEV1" "$IPADDR1" 0
-				if [ $? -gt 0 ]; then
-					error_exit "${SCRIPTNAME} failed to produce valid yaml netplan file. Exiting."
-				fi
-			else
-				ubuntu_iface_cfg_write "$NETDEV1" "$IPADDR1" 0
-			fi
+elif [ $IS_NETWORKD -gt 0 ]; then
+
+	if [ $IS_FEDORA -gt 0 ]; then
+		log_msg "Error: Network configuration for systemd-networkd on Fedora is not currently supported.  Exiting."
+		# for possible implimentations, see:
+		# https://fedoraproject.org/wiki/Cloud/Network-Requirements
+		# https://www.xmodulo.com/switch-from-networkmanager-to-systemd-networkd.html
+		exit 1
+	elif [ $IS_NETPLAN -gt 0 ]; then
+		netplan_failsafe_write
+		netplan_cfg_write 'CLEAR_ALL'
+		netplan_cfg_write "$NETDEV0" "$IPADDR0" 1
+		if [ $? -gt 0 ]; then
+			log_msg "${SCRIPT_NAME} failed to produce valid yaml netplan file. Exiting."
+			exit 1
 		fi
+	else
+		log_msg "Error: Network configuration for ubuntu & systemd-networkd without netplan is not currently supported.  Exiting."
+		exit 1
 	fi
 fi
 
+#################################################################################################################################
+# Write the secondary interface..
+#################################################################################################################################
+if [ $MULTI_NICS -gt 0 ] && [ ! -z "$NETDEV1" ] && [ $IS_DHCPCD -gt 0 ]; then
+	log_msg "Error: Network configuration for dhcpcd.service is not currently supported.  Exiting."
+	exit 1
+
+elif [ $MULTI_NICS -gt 0 ] && [ ! -z "$NETDEV1" ] && [ $IS_NETWORKMNGR -gt 0 ]; then
+	networkmanager_iface_set "$NETDEV1" "$IPADDR1" "$ESSID" "$WPA_PSK"
+
+elif [ $MULTI_NICS -gt 0 ] && [ ! -z "$NETDEV1" ] && [ $IS_NETINTERFACES -gt 0 ]; then
+	if [ $IS_FEDORA -gt 0 ]; then
+		fedora_iface_cfg_write "$NETDEV1" "$IPADDR1" 0
+	else
+		ubuntu_iface_cfg_write "$NETDEV1" "$IPADDR1" 0
+	fi
+
+elif [ $MULTI_NICS -gt 0 ] && [ ! -z "$NETDEV1" ] && [ $IS_NETWORKD -gt 0 ]; then
+	if [ $IS_NETPLAN -gt 0 ]; then
+		netplan_cfg_write "$NETDEV1" "$IPADDR1" 0
+		if [ $? -gt 0 ]; then
+			log_msg "${SCRIPT_NAME} failed to produce valid yaml netplan file. Exiting."
+			exit 1
+		fi
+	else
+		log_msg "Error: Network configuration for systemd-networkd without netplan is not currently supported.  Exiting."
+		exit 1
+	fi
+
+fi
+
 if [ $IS_NETPLAN -gt 0 ]; then
-	ubuntu_netplan_apply
+	netplan_apply
 fi
 
 # Restart the network
-network_start
-error_echo "Waiting 5 seconds for network to restart.."
-sleep 5
+#~ log_msg "Waiting 5 seconds for network to restart.."
+#~ sleep 5
+#~ [ $IS_FEDORA -gt 0 ] || [ $IS_NETPLAN -lt 1 ] && network_start
+network_restart
 
+
+# Get the IP addresses if we're configured for dhcp..
 if [ $DHCP_ALL -gt 0 ] || [ $IPADDR0 = 'dhcp' ] || [ -z "$NETDEV0" ]; then
 
 	IPADDR0=$(ipaddr_primary_get)
@@ -1882,22 +2642,22 @@ fi
 
 # If ping fails then exit early, skipping modifying the firewall & sharing services..
 if [ $TESTPING -gt 0 ]; then
-	[ $VERBOSE -gt 0 ] && error_echo "${SCRIPTNAME}: Attempting to ping ${GATEWAY} from ${IPADDR0}.."
+	[ $VERBOSE -gt 0 ] && log_msg "${SCRIPT_NAME}: Attempting to ping ${GATEWAY} from ${IPADDR0}.."
 	sleep 3
 	ping -c 1 -W 5 $GATEWAY >/dev/null 2>&1
 	if [ $? -gt 0 ]; then
-		[ $QUIET -lt 1 ] && error_echo "${SCRIPTNAME}: Gateway ${GATEWAY} does not respond to ping. Exiting."
+		[ $QUIET -lt 1 ] && log_msg "${SCRIPT_NAME}: Gateway ${GATEWAY} does not respond to ping. Exiting."
 		exit 1
 	else
-		[ $QUIET -lt 1 ] && error_echo "${SCRIPTNAME}: Gateway ${GATEWAY} responds to ping. Continuing.."
+		[ $QUIET -lt 1 ] && log_msg "${SCRIPT_NAME}: Gateway ${GATEWAY} responds to ping. Continuing.."
 	fi
 fi
 
 
 # Fix-up various services and firewall..
 if [ $NETCFG_ONLY -lt 1 ]; then
-	[ $QUIET -lt 1 ] && error_echo "${SCRIPTNAME}: Configuring other services for ${NETDEV0}:${IPADDR0}, ${NETDEV1}:${IPADDR1}"
-	netatalk_fix "$IPADDR0" "$IPADDR1"
+	[ $QUIET -lt 1 ] && log_msg "${SCRIPT_NAME}: Configuring other services for ${NETDEV0}:${IPADDR0}, ${NETDEV1}:${IPADDR1}"
+	[ $FIX_NETATALK -gt 0 ] && netatalk_fix "$IPADDR0" "$IPADDR1"
 	samba_fix "$IPADDR0" "$IPADDR1"
 	minidlna_fix "$NETDEV0" "$NETDEV1"
 	FW_ARGS=''
@@ -1913,14 +2673,25 @@ if [ $NETCFG_ONLY -lt 1 ]; then
 	if [ $FIREWALL_MINIMAL -gt 0 ]; then
 		FW_ARGS="${FW_ARGS} --minimal"
 	fi
-	
-	if [ ! -z "$FIREWALL_IFACE" ]; then
-		[ $QUIET -lt 1 ] && error_echo "Configuring firewall for ${FW_ARGS} ${FIREWALL_IFACE}"
-		"${SCRIPT_DIR}/config-firewall.sh" $CONFIG_NETWORK_OPTS $FW_ARGS "$FIREWALL_IFACE"
-	else
-		[ $QUIET -lt 1 ] && error_echo "Configuring firewall for ${FW_ARGS} ${IPADDR0} ${IPADDR1}"
-		"${SCRIPT_DIR}/config-firewall.sh" $CONFIG_NETWORK_OPTS $FW_ARGS "$IPADDR0" "$IPADDR1"
+	if [ $FIREWALL_PUBLIC -gt 0 ]; then
+		FW_ARGS="${FW_ARGS} --public"
 	fi
+
+	if [ $NO_FIREWALL -lt 1 ]; then
+		if [ $FIREWALL_USE_APPS -gt 0 ]; then
+			[ $QUIET -lt 1 ] && log_msg "Configuring firewall using application definitions for installed services.."
+			"${SCRIPT_DIR}/config-firewall-prep-apps.sh" $FW_ARGS
+		else
+			if [ ! -z "$FIREWALL_IFACE" ]; then
+				[ $QUIET -lt 1 ] && log_msg "Configuring firewall for ${FW_ARGS} ${FIREWALL_IFACE}"
+				"${SCRIPT_DIR}/config-firewall.sh" $CONFIG_NETWORK_OPTS $FW_ARGS "$FIREWALL_IFACE"
+			else
+				[ $QUIET -lt 1 ] && log_msg "Configuring firewall for ${FW_ARGS} ${IPADDR0} ${IPADDR1}"
+				"${SCRIPT_DIR}/config-firewall.sh" $CONFIG_NETWORK_OPTS $FW_ARGS "$IPADDR0" "$IPADDR1"
+			fi
+		fi
+	fi
+
 fi
 
 # Check connectivity..
@@ -1930,14 +2701,15 @@ fi
 # Return connection status..
 
 if [ $TESTPING -lt 1 ]; then
-	[ $QUIET -lt 1 ] && error_echo "${SCRIPTNAME}: Attempting to ping ${GATEWAY}"
+	[ $QUIET -lt 1 ] && log_msg "${SCRIPT_NAME}: Attempting to ping ${GATEWAY}"
+
 	ping -c 1 -W 5 $GATEWAY >/dev/null 2>&1
-	
+
 	if [ $? -gt 0 ]; then
-		[ $QUIET -lt 1 ] && error_echo "${SCRIPTNAME}: ${GATEWAY} does not respond to ping. Exiting."
+		[ $QUIET -lt 1 ] && log_msg "${SCRIPT_NAME}: ${GATEWAY} does not respond to ping. Exiting."
 		exit 1
 	else
-		[ $QUIET -lt 1 ] && error_echo "${SCRIPTNAME}: ${GATEWAY} responds to ping, so network is OK.."
+		[ $QUIET -lt 1 ] && log_msg "${SCRIPT_NAME}: ${GATEWAY} responds to ping, so network is OK.."
 		exit 0
 	fi
 fi

@@ -2,7 +2,7 @@
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20220302.083149
+SCRIPT_VERSION=20220904.081140
 
 INST_NAME='lcwa-speed'
 SERVICE_NAME=
@@ -32,8 +32,8 @@ USE_SYSTEMD=0
 USE_SYSV=1
 
 IS_DEBIAN="$(which apt-get 2>/dev/null | wc -l)"
-IS_UPSTART=$(initctl version 2>/dev/null | egrep -c 'upstart')
-IS_SYSTEMD=$(systemctl --version 2>/dev/null | egrep -c 'systemd')
+IS_UPSTART=$(initctl version 2>/dev/null | grep -c 'upstart')
+IS_SYSTEMD=$(systemctl --version 2>/dev/null | grep -c 'systemd')
 
 ####################################################################################
 # Requirements: do we have the utilities needed to get the job done?
@@ -419,7 +419,7 @@ git_check_up_to_date(){
 	if [ -d './.git' ]; then
 		# http://stackoverflow.com/questions/3258243/git-check-if-pull-needed
 		log_msg "Checking ${LLOCAL_REPO} to see if update is needed.."
-		if [ $($TIMEOUT_BIN $PROC_TIMEOUT git remote -v update 2>&1 | egrep -c "\[up to date\]") -gt 0 ]; then
+		if [ $($TIMEOUT_BIN $PROC_TIMEOUT git remote -v update 2>&1 | grep -c "\[up to date\]") -gt 0 ]; then
 			log_msg "Local repository ${LLOCAL_REPO} is up to date."
 			return 0
 		else

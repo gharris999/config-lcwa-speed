@@ -4,7 +4,7 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 ######################################################################################################
-SCRIPT_VERSION=20220724.224321
+SCRIPT_VERSION=20220730.111146
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -552,6 +552,23 @@ pkg_deps_install(){
 			dnf install -y $LPKG_LIST
 			LRET=$?
 		fi
+		
+		# Fix for missing liblibiperf.a
+		# Find libiperf3.a
+		LIBIPERF="$(find /usr -name 'libiperf\.a' -print -quit)"
+
+		# See if there is a liblibiperf.a
+		LIBLIBIPERF="$(find /usr -name 'liblibiperf\.a')"
+
+		if [ ! -f "$LIBLIBIPERF" ]; then
+			if [ -f "$LIBIPERF" ]; then
+				LIBLIBIPERF="$(dirname "$LIBIPERF")/liblibiperf.a"
+				echo ' '
+				echo "Creating link: ln -s ${LIBIPERF} ${LIBLIBIPERF}"
+				echo "$DAADMIN_PASS" | sudo -S ln -s "$LIBIPERF" "$LIBLIBIPERF"
+			fi
+		fi
+
 	fi
 	
 	# Install a pre-compiled updated version of jq

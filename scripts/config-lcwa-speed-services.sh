@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220306.213127
+SCRIPT_VERSION=20220913.162808
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -400,36 +400,40 @@ units_status(){
 	done
 }
 
-
 # Remove old crontab entries
 crontab_entry_remove(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local ROOTCRONTAB='/var/spool/cron/crontabs/root'
+	local ROOTCRONTAB_TEMP="$(mktemp)"
 	local COMMENT=
 	local EVENT=
 
 	[ ! -f "$ROOTCRONTAB" ] && return 0
 	
 	[ $QUIET -lt 1 ] && error_echo "Removing old crontab entries from ${ROOTCRONTAB}"
+	crontab -u root -l >"$ROOTCRONTAB_TEMP"
 	
 	# Remove any entry for the proc-net-dev.sh logger
 	COMMENT='#At the top of every hour, log our net stats for the ppp0 interface'
 	EVENT='0 * * * * /usr/local/sbin/log-proc-net-dev.sh | /usr/bin/logger -t lcwa-netstats'
 	[ $QUIET -lt 1 ] && error_echo "Removing ${EVENT} from ${ROOTCRONTAB}"
-	sed -i '/^#.*top of every hour.*$/d' "$ROOTCRONTAB" >/dev/null 2>&1
-	sed -i '/^.*log-proc-net-dev.*$/d' "$ROOTCRONTAB" >/dev/null 2>&1
+	sed -i '/^#.*top of every hour.*$/d' "$ROOTCRONTAB_TEMP" >/dev/null 2>&1
+	sed -i '/^.*log-proc-net-dev.*$/d' "$ROOTCRONTAB_TEMP" >/dev/null 2>&1
 
 	COMMENT='#Everyday, at 5 minutes past midnight, update lcwa-speed and restart the service:'
 	EVENT='5 0 * * * /usr/local/share/config-lcwa-speed/scripts/lcwa-speed-update.sh --debug | /usr/bin/logger -t lcwa-speed'
 	[ $QUIET -lt 1 ] && error_echo "Removing ${EVENT} from ${ROOTCRONTAB}"
-	sed -i '/^#.*at 5 minutes past midnight.*$/d' "$ROOTCRONTAB" >/dev/null 2>&1
-	sed -i '/^.*lcwa-speed-update.*$/d' "$ROOTCRONTAB" >/dev/null 2>&1
+	sed -i '/^#.*at 5 minutes past midnight.*$/d' "$ROOTCRONTAB_TEMP" >/dev/null 2>&1
+	sed -i '/^.*lcwa-speed-update.*$/d' "$ROOTCRONTAB_TEMP" >/dev/null 2>&1
 	
 	COMMENT='#At every 10th minute, check the lcwa20a PPPoE connecton and reestablish it if down.'
 	EVENT='*/10 * * * * /usr/local/sbin/chkppp.sh | /usr/bin/logger -t lcwa-pppchk'
 	[ $QUIET -lt 1 ] && error_echo "Removing ${EVENT} from ${ROOTCRONTAB}"
-	sed -i '/^#.*every 10th minute.*$/d' "$ROOTCRONTAB" >/dev/null 2>&1
-	sed -i '/^.*chkppp.*$/d' "$ROOTCRONTAB" >/dev/null 2>&1
+	sed -i '/^#.*every 10th minute.*$/d' "$ROOTCRONTAB_TEMP" >/dev/null 2>&1
+	sed -i '/^.*chkppp.*$/d' "$ROOTCRONTAB_TEMP" >/dev/null 2>&1
+
+	# update the root crontab..
+	crontab -u root "$ROOTCRONTAB_TEMP"
 
 	# signal crond to reload the file
 	sudo touch /var/spool/cron/crontabs
@@ -442,6 +446,8 @@ crontab_entry_remove(){
 	[ $QUIET -lt 1 ] && error_echo "========================================================================================="
 	[ $QUIET -lt 1 ] && crontab -l >&2
 	[ $QUIET -lt 1 ] && error_echo "========================================================================================="
+	
+	rm "$ROOTCRONTAB_TEMP"
 
 }
 

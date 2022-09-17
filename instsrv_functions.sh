@@ -2,10 +2,10 @@
 
 ######################################################################################################
 # Bash include script for generically installing services on upstart, systemd & sysv systems
-# 20220207 -- Gordon Harris
+# 20220818 -- Gordon Harris
 ######################################################################################################
-INCSCRIPT_VERSION=20220726.103100
-SCRIPTNAME=$(basename "$0")
+INCSCRIPT_VERSION=20220915.001851
+SCRIPT_NAME=$(basename -- "$0")
 
 # Get the underlying user...i.e. who called sudo..
 UUSER="$(logname 2>/dev/null)"
@@ -13,16 +13,29 @@ UUSER="$(logname 2>/dev/null)"
 [ -z "$UUSER" ] && [ "$(tty)" != 'not a tty' ] && UUSER="$(ls -l $(tty) | awk '{print $3}')"
 [ -z "$UUSER" ] && UUSER="$(awk -F':' '{ if($7 ~ /\/bin\/bash/ && $1 !~ /root/) {print $1; exit} };0' /etc/passwd)"
 
+: "${DEBUG:=0}"
+: "${QUIET:=0}"
+: "${VERBOSE:=0}"
+: "${TEST:=0}"
+: "${FORCE:=0}"
+: "${LOG:=0}"
+: "${LOGFILE:=}"
+
+if [ "$(basename -- "$0")" = "instsrv_functions.sh" ]; then
+	DEBUG=1
+fi
+
 
 NOPROMPT=0
-QUIET=0
-VERBOSE=0
-DEBUG=0
-TEST=0
+#DEBUG=0
+#QUIET=0
+#VERBOSE=0
+#TEST=0
+#FORCE=0
+
 UPDATE=0
 UNINSTALL=0
 REMOVEALL=0
-FORCE=0
 
 DISABLE=0
 ENABLE=0
@@ -37,52 +50,145 @@ NEEDSLOG=0
 NEEDSCONF=0
 NEEDSPRIORITY=0
 
+############################################################################################################################################################################
+
+######################################################################################################
+# Variables identifying system properties.  1 == true, 0 == false
+######################################################################################################
+
+# system architecture
+M_ARCH="$(uname -m)"
+
+# Distros
+IS_DEBIAN=0
+IS_UBUNTU=0
+UBUNTU_VER=0
+IS_FOCAL=0			# if Ubuntu ver >= 20.04, IS_FOCAL=1
+IS_RHINO=0
+IS_FEDORA=0
+IS_WSL=0
+
+# Init system
+IS_SYSV=0
+IS_UPSTART=0
+IS_SYSTEMD=0
+USE_SYSV=0
 USE_UPSTART=0
 USE_SYSTEMD=0
-USE_SYSV=1
+SYSTEMD_VER=0
 
+# Package manager
 USE_APT=0
+USE_NALA=0
 USE_YUM=0
 
+# Network config & renderer
+IS_NETPLAN=0
+IS_DHCPCD=0
+IS_NETWORKD=0
+IS_NETWORKMNGR=0
+IS_NETINTERFACES=0
+
+# Firewall
+USE_UFW=0
+USE_FIREWALLD=0
+
+# GUI or text?
+HAS_GUI=0
+IS_GUI=0
+IS_TEXT=0
+
+
 ######################################################################################################
-# Identify system type, init type, update utility, firewall utility, network config system..
+# Identify init system
 ######################################################################################################
 
-#~ IS_DEBIAN="$(which apt-get 2>/dev/null | wc -l)"
-#~ IS_FEDORA="$(hostnamectl status | grep -c 'Fedora')"
-# The following works for debian, ubuntu, raspbian
-IS_DEBIAN="$(grep -c -e '^ID.*=.*debian' /etc/os-release)"
-UBUNTU_VER=
-IS_FOCAL=0			# if Ubuntu ver >= 20.04, IS_FOCAL=1
+# Our distro type?
 
-# The following ought to work for fedora, centos, etc.
-IS_FEDORA="$(grep -c -e '^ID.*=.*fedora' /etc/os-release)"
+# The following works for debian, ubuntu, raspbian..
+#IS_DEBIAN="$(grep -c -e '^ID.*=.*debian' /etc/os-release 2>/dev/null)"
+grep -c -e '^ID.*=.*debian' /etc/os-release >/dev/null 2>&1 && IS_DEBIAN=1 || IS_DEBIAN=0
 
-if [ -f /etc/debian_version ]; then
+# The following ought to work for fedora, centos, etc..
+#~ IS_FEDORA="$(grep -c -e '^ID.*=.*fedora' /etc/os-release 2>/dev/null)"
+grep -c -e '^ID.*=.*fedora' /etc/os-release >/dev/null 2>&1 && IS_FEDORA=1 || IS_FEDORA=0
+
+
+# The follwing works with MacOS Catalina & zsh..
+IS_MAC=$( [[ $OSTYPE == 'darwin'* ]] && echo 1 || echo 0)
+
+# The following works with WSL & WSL2
+IS_WSL=$(uname -a | grep -ci 'microsoft')
+
+# Is systemd our init system?  
+#  (default for ubuntu from 15.04 - i.e. 14.10 is the last version to use upstart)
+#~ IS_SYSTEMD=$(systemctl 2>&1 | grep -c '\-\.mount')
+systemctl is-active --quiet -- '-.mount' 2>/dev/null && IS_SYSTEMD=1 || IS_SYSTEMD=0
+
+if [ $IS_SYSTEMD -gt 0 ]; then
+	USE_SYSTEMD=1
+	SYSTEMD_VER=$(systemctl --version | grep 'systemd' | awk '{ print $2 }')
+elif [ $(initctl version 2>/dev/null | grep -c 'upstart') -gt 0 ]; then
+	IS_UPSTART=1
+	USE_UPSTART=1
+else
+	IS_SYSV=1
+	USE_SYSV=1
+fi
+
+#~ echo "Here at ${LINENO}"
+
+######################################################################################################
+# Network renderer service
+######################################################################################################
+IS_NETWORKD=$(( systemctl is-enabled --quiet 'systemd-networkd' 2>/dev/null ) && echo 1 || echo 0)
+IS_NETWORKMNGR=$(( systemctl is-enabled --quiet 'NetworkManager' 2>/dev/null ) && echo 1 || echo 0)
+IS_DHCPCD=$(( systemctl is-enabled --quiet 'dhcpcd' 2>/dev/null ) && echo 1 || echo 0)
+if [[ $IS_DHCPCD -gt 0 ]] && [[ $IS_SYSTEMD -gt 0 ]]; then
+	systemctl is-active --quiet dhcpcd.service 2>/dev/null
+	[ $? -eq 0 ] && IS_DHCPCD=1 || IS_DHCPCD=0
+fi
+
+# If not systemd-networkd or NetworkManager or dhcpcd, the use old still ifupdown /etc/networking/interfaces
+IS_NETINTERFACES=0
+[ $IS_NETWORKD -lt 1 ] && [ $IS_NETWORKMNGR -lt 1 ] && [ $IS_DHCPCD -lt 1 ] && IS_NETINTERFACES=1
+
+######################################################################################################
+# Network configuration app
+######################################################################################################
+IS_NETPLAN="$(which netplan 2>/dev/null | wc -l | xargs)"
+#~ [ $IS_NETPLAN -gt 0 ] && NETPLAN_VER="$(dpkg-query --showformat='${Version}\n' --show 'netplan.io' | sed -e 's/-.*$//')" || NETPLAN_VER=
+#~ NETPLAN_USE_ROUTES="$(netplan info | grep -c default-routes)"
+
+######################################################################################################
+# Firewall font-end
+######################################################################################################
+USE_UFW=$(( systemctl is-enabled --quiet 'ufw' 2>/dev/null ) && echo 1 || echo 0)
+USE_FIREWALLD=$(( systemctl is-enabled --quiet 'firewalld' 2>/dev/null ) && echo 1 || echo 0)
+
+######################################################################################################
+# Gui?
+######################################################################################################
+#~ HAS_GUI=$(ls -l /usr/bin/gnome* 2>/dev/null | wc -l)
+HAS_GUI=$(find /usr/bin -name 'gnome*' | wc -l | xargs)
+IS_GUI=$(systemctl get-default  2>/dev/null | grep -c 'graphical')
+IS_TEXT=$(systemctl get-default 2>/dev/null | grep -c 'multi-user')
+# Ubuntu server defaults to graphical.target even though there is no display manager
+[ $IS_GUI -gt 0 ] && [ $HAS_GUI -lt 1 ] && IS_GUI=0 && IS_TEXT=1
+
+######################################################################################################
+# Fixups for various distros..
+######################################################################################################
+if [[ $IS_DEBIAN -gt 0 ]]; then
 	IS_DEB=1
 	USE_APT=1
 	IS_RPM=0
 	USE_YUM=0
 	IS_MAC=0
-else
-	IS_DEB=0
-	USE_APT=0
-	IS_RPM=1
-	USE_YUM=1
-	IS_MAC=0
-fi
 
-if [[ $OSTYPE == 'darwin'* ]]; then
-	IS_MAC=1
-	IS_DEB=0
-	USE_APT=0
-	IS_RPM=0
-	USE_YUM=0
-fi
-
-
-if [ $IS_DEBIAN -gt 0 ]; then
+	IS_UBUNTU=$(grep -c -E '^NAME="Ubuntu"' /etc/os-release 2>/dev/null)
 	# Test to see if is Ubuntu 20.04 or later..
+
 	UBUNTU_VER="$(lsb_release -rs)"
 	# Not less than 20.04 == Greater than or equal to 20.04
 	if [[ ! "$UBUNTU_VER" < '20.04' ]]; then
@@ -90,48 +196,44 @@ if [ $IS_DEBIAN -gt 0 ]; then
 	else
 		IS_FOCAL=0
 	fi
-fi
+	
+	# Test to see if this is a Rolling Rhino Remix install
+	IS_RHINO="$(grep -c -E '^PRETTY_NAME=.*Rhino.*' /etc/os-release 2>/dev/null)"
+	
+	USE_NALA="$(which nala | wc -l)"
+	
+	[ $IS_SYSTEMD -lt 1 ] && IS_UPSTART=$(initctl version 2>/dev/null | grep -c 'upstart')
+	USE_UPSTART=$IS_UPSTART
 
-IS_UPSTART=$(initctl version 2>/dev/null | grep -c 'upstart')
-IS_SYSTEMD=$(systemctl --version 2>/dev/null | grep -c 'systemd')
+elif [[ $IS_FEDORA -gt 0 ]]; then
+	USE_YUM=1 
+	IS_DEB=0
+	USE_APT=0
+	IS_RPM=1
+	USE_YUM=1
+	IS_MAC=0
 
-# Network service type
-IS_NETPLAN="$(which netplan 2>/dev/null | wc -l)"
-IS_DHCPCD=$(( systemctl is-enabled --quiet 'dhcpcd' 2>/dev/null ) && echo 1 || echo 0)
-if [[ $IS_DHCPCD -gt 0 ]] && [[ $IS_SYSTEMD -gt 0 ]]; then
-	systemctl is-active --quiet dhcpcd.service
-	[ $? -eq 0 ] && IS_DHCPCD=1 || IS_DHCPCD=0
-fi
-
-# Network renderer
-IS_NETWORKD=$(( systemctl is-enabled --quiet 'systemd-networkd' 2>/dev/null ) && echo 1 || echo 0)
-IS_NETWORKMNGR=$(( systemctl is-enabled --quiet 'NetworkManager' 2>/dev/null ) && echo 1 || echo 0)
-
-# Firewall font-end
-USE_UFW=$(( systemctl is-enabled --quiet 'ufw' 2>/dev/null ) && echo 1 || echo 0)
-USE_FIREWALLD=$(( systemctl is-enabled --quiet 'firewalld' 2>/dev/null ) && echo 1 || echo 0)
-
-# Gui?
-HAS_GUI=$(ls -l /usr/bin/gnome* 2>/dev/null | wc -l)
-IS_GUI=$(systemctl get-default | grep -c 'graphical')
-IS_TEXT=$(systemctl get-default | grep -c 'multi-user')
-
-# Identify the init system
-# Prefer upstart to systemd if both are installed..
-
-if [ $(ps -eaf | grep -c [u]pstart) -gt 1 ]; then
-	USE_UPSTART=1
-	USE_SYSTEMD=0
+elif [ $IS_MAC -gt 0 ]; then
+	IS_MAC=1
+	IS_SYSV=0
 	USE_SYSV=0
-elif [ $(ps -eaf | grep -c [s]ystemd) -gt 2 ]; then
-	USE_UPSTART=0
-	USE_SYSTEMD=1
-	USE_SYSV=0
-else
-	USE_UPSTART=0
-	USE_SYSTEMD=0
-	USE_SYSV=1
+	IS_DEB=0
+	USE_APT=0
+	IS_RPM=0
+	USE_YUM=0
+
 fi
+
+if [ $IS_WSL -gt 0 ]; then
+	IS_SYSV=0
+	USE_SYSV=0
+	IS_NETPLAN=0
+	USE_UFW=0
+	IS_TEXT=1
+fi
+
+
+############################################################################################################################################################################
 
 
 ######################################################################################################
@@ -175,13 +277,26 @@ INST_FWZONE=
 
 HOSTNAME=$(hostname | tr [a-z] [A-Z])
 
+
 ######################################################################################################
 # is_root() -- make sure we're running with suficient credentials..
 ######################################################################################################
 function is_root(){
 	if [ $(whoami) != 'root' ]; then
 		echo '################################################################################'
-		echo -e "\nError: ${SCRIPTNAME} needs to be run with root cridentials, either via:\n\n# sudo ${0}\n\nor under su.\n"
+		echo -e "\nError: ${SCRIPT_NAME} needs to be run with root cridentials, either via:\n\n# sudo ${0}\n\nor under su.\n"
+		echo '################################################################################'
+		exit 1
+	fi
+}
+
+######################################################################################################
+# is_root() -- make sure we're running with suficient credentials..
+######################################################################################################
+function is_not_root(){
+	if [ $(whoami) = 'root' ]; then
+		echo '################################################################################'
+		echo "Error: ${SCRIPT_NAME} needs to be run with user, not root cridentials,"
 		echo '################################################################################'
 		exit 1
 	fi
@@ -199,8 +314,13 @@ function psgrep(){
 # timezone_get() -- Use the api.ipgeolocation.io website to get the local timezone..
 ######################################################################################################
 function timezone_get(){
+	debug_echo "${FUNCNAME}( $@ )"
 	#~ local LMY_APIKEY='60aca0cf9d45428e9ee1e27a63bbb329'
 	#~ local LMYTZ="$(curl --silent "https://api.ipgeolocation.io/timezone?apiKey=${LMY_APIKEY}" | sed -n -e 's/^.*"timezone":"\([^\s]\+\/[^\s]\+\)",.*$/\1/p')"
+	if [ -z "$(which curl)" ]; then
+		error_echo "${FUNCNAME} error: curl not installed."
+		return 1
+	fi
 
 	# 4 Different methods of getting a time zone..
 	local LMYTZ=
@@ -212,10 +332,12 @@ function timezone_get(){
 	
 	for LCMD in "$LCMD1" "$LCMD2" "$LCMD3" "$LCMD4"
 	do
+		debug_echo "${FUNCNAME} evaluating command: ${LCMD}"
 		eval "$LCMD"
 
 		# Does this look like a timezone?
 		if [ $(echo $LMYTZ | grep -c -E '^\S+/\S+$') -gt 0 ]; then
+			debug_echo "${FUNCNAME} detected timezone: ${LMYTZ}"
 			echo "$LMYTZ"
 			return 0
 		fi
@@ -270,10 +392,6 @@ date_epoch_to_iso8601u(){
 	echo "$(date -u -d "@${LEPOCH}" --iso-8601=s)"
 }
 
-error_log(){
-	echo "${SCRIPT} $(timestamp_get_iso8601) " "$@" >>"$INST_LOGFILE"
-}
-
 ######################################################################################################
 # error_echo() -- echo a message to stderr
 ######################################################################################################
@@ -281,11 +399,72 @@ error_echo(){
 	echo "$@" 1>&2;
 }
 
+error_log(){
+	[ -z "$SCRIPT_LOG" ] && [ ! -z "$INST_LOGFILE" ] && SCRIPT_LOG="$INST_LOGFILE"
+	[ $LOG -gt 0 ] && echo "${SCRIPT} $(timestamp_get_iso8601) " "$@" >>"$SCRIPT_LOG"
+}
+
+log_msg_dir_create(){
+	local LLOGFILE="$1"
+	local LLOGDIR=
+	[ $LOG -lt 1 ] && return 1
+	
+	[ -z "$LLOGFILE" ] && [ ! -z "$SCRIPT_LOG" ] && LLOGFILE="$SCRIPT_LOG"
+	
+	[ -z "$LLOGFILE" ] && return 1
+	
+	local LLOGDIR="$(dirname "$LLOGFILE")"
+	[ ! -d "$LLOGDIR" ] && mkdir -p "$LLOGDIR"
+}
+
+log_msg(){
+	error_echo "$@"
+	[ $LOG -gt 0 ] && error_log "$@"
+}
+
+######################################################################################################
+# debug_cat() -- cats a file to stderr 
+######################################################################################################
+log_cat(){
+	local LFILE="$1"
+	if [ -f "$LFILE" ]; then
+		error_log ' '
+		error_log '================================================================================='
+		error_log "${LFILE} contents:"
+		error_log '================================================================================='
+		cat "$LFILE" 1>&2;
+		cat "$LFILE" >>"$SCRIPT_LOG"
+		error_log '================================================================================='
+		error_log ' '
+	fi
+}
+
+
+debug_stacktrace(){
+	[ $DEBUG -lt 1 ] && return
+	local i=0 line file func
+	while read line func file; do
+		error_echo -n "[$i] $file:$line $func(): "
+		test -f "$file" && sed -n ${line}p "$file" || error_echo "<unknown>"
+		((i++))
+	done < <(while caller $i; do ((i++)); done)
+}
+
+
+
 ######################################################################################################
 # debug_echo() -- echo a debugging message to stderr
 ######################################################################################################
 debug_echo(){
 	[ $DEBUG -gt 0 ] && echo "$@" 1>&2;
+}
+
+######################################################################################################
+# debug_log() -- echo a debugging message to stderr and to the log file
+######################################################################################################
+debug_log(){
+	[ $DEBUG -gt 0 ] && error_echo "$@"
+	[ $DEBUG -gt 0 ] && [ $LOG -gt 0 ] && error_log "$@"
 }
 
 ######################################################################################################
@@ -317,12 +496,13 @@ debug_pause(){
 debug_cat(){
 	[ $DEBUG -lt 1 ] && return
 	local LFILE="$1"
+	local LRE="$2"
 	if [ -f "$LFILE" ]; then
 		error_echo ' '
 		error_echo '================================================================================='
-		error_echo "${LFILE} contents:"
+		error_echo "${LFILE} ${LRE} contents:"
 		error_echo '================================================================================='
-		cat "$LFILE" 1>&2;
+		[ ! -z "$LRE" ] && grep -E "$LRE" "$LFILE" 1>&2 || cat "$LFILE" 1>&2
 		error_echo '================================================================================='
 		error_echo ' '
 	fi
@@ -332,6 +512,7 @@ debug_cat(){
 # disp_help() -- display the getopts allowable args
 ########################################################################
 disp_help(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSCRIPTNAME="$(basename "$0")"
 	local LDESCRIPTION="$1"
 	local LEXTRA_ARGS="${@:2}"
@@ -339,7 +520,7 @@ disp_help(){
 	error_echo -e "Syntax: ${LSCRIPTNAME} ${LEXTRA_ARGS}\n"
 	error_echo "            Optional parameters:"
 	# See: https://gist.github.com/sv99/6852cc2e2a09bd3a68ed for explaination of the sed newling replacement
-	cat "$(readlink -f "$0")" | grep -E '^\s+-' | grep -v -- '--)' | sed -e 's/)//' -e 's/#/\n\t\t\t\t#/' | fmt -t -s | sed ':a;N;$!ba;s/\n\s\+\(#\)/\t\1/g' 1>&2
+	cat "$(readlink -f "$0")" | grep -E '^\s+-' | grep -v -- '--)' | grep -vi '# hide' | sed -e 's/)//' -e 's/#/\n\t\t\t\t#/' | fmt -t -s | sed ':a;N;$!ba;s/\n\s\+\(#\)/\t\1/g' 1>&2
 	error_echo ' '
 }
 
@@ -347,7 +528,7 @@ disp_help(){
 # service_inst_prep() -- Set most of the INST_ variables based on $INST_NAME
 ######################################################################################################
 service_inst_prep(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ -z "$INST_NAME" ]; then
 		error_exit "INST_NAME undefined."
 	fi
@@ -407,7 +588,7 @@ is_user(){
 # inst_user_create() Find or create the user account the service will run under.
 ######################################################################################################
 inst_user_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_USER="${1:-${INST_USER}}"
 	local LINST_GROUP="$INST_GROUP"
 
@@ -480,7 +661,7 @@ inst_user_create(){
 # inst_user_remove() Delete the user account..
 ######################################################################################################
 inst_user_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_USER="${1:-${INST_USER}}"
 	local LINST_GROUP="$INST_GROUP"
 
@@ -516,7 +697,7 @@ inst_user_remove(){
 # home_dir_create( dir ) Create the service home dir (usually parent of data_dir
 ######################################################################################################
 home_dir_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_HOMEDIR="${1:-/var/lib/${INST_NAME}}"
 
     if [ $NEEDSHOME -lt 0 ]; then
@@ -543,7 +724,7 @@ home_dir_create(){
 }
 
 home_dir_update(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_HOMEDIR="${1:-/var/lib/${INST_NAME}}"
 	home_dir_create "$LINST_HOMEDIR"
 }
@@ -552,7 +733,7 @@ home_dir_update(){
 # home_dir_remove( dir ) Removes the service home dir (usually parent of data_dir
 ######################################################################################################
 home_dir_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_HOMEDIR="${1:-/var/lib/${INST_NAME}}"
 
     if [ $NEEDSHOME -lt 0 ]; then
@@ -577,7 +758,7 @@ home_dir_remove(){
 # create_data_dir( dir, file ) Create the service data dir..
 ######################################################################################################
 data_dir_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_DATADIR="${1:-/var/lib/${INST_NAME}}"
 	local LINST_DATAFILE="$2"
 
@@ -616,7 +797,7 @@ data_dir_create(){
 # data_dir_remove() Remove the service data dir..
 ######################################################################################################
 data_dir_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_DATADIR="${1:-/var/lib/${INST_NAME}}"
 
     if [ $NEEDSDATA -lt 0 ]; then
@@ -636,7 +817,7 @@ data_dir_remove(){
 # data_dir_update() Update the service data dir..
 ######################################################################################################
 data_dir_update(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_DATADIR="${1:-/var/lib/${INST_NAME}}"
 
 	data_dir_create "$LINST_DATADIR"
@@ -647,7 +828,7 @@ data_dir_update(){
 # create_log_dir() Create the service log dir..
 ######################################################################################################
 log_dir_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_LOGDIR="${1:-/var/log/${INST_NAME}}"
 	local LINST_LOGFILE="${2:-${LINST_LOGDIR}/${INST_NAME}.log}"
 
@@ -686,7 +867,7 @@ log_dir_create(){
 # log_dir_update() Update the service log dir..
 ######################################################################################################
 log_dir_update(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_LOGDIR="${1:-/var/log/${INST_NAME}}"
 	local LINST_LOGFILE="${2:-${LINST_LOGDIR}/${INST_NAME}.log}"
 	log_dir_create "$LINST_LOGDIR" "$LINST_LOGFILE"
@@ -696,7 +877,7 @@ log_dir_update(){
 # log_dir_remove() Update the service log dir..
 ######################################################################################################
 log_dir_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_LOGDIR="${1:-/var/log/${INST_NAME}}"
 
 	#~ [ -z "$INST_LOGDIR" ] && INST_LOGDIR="/var/log/${INST_NAME}"
@@ -715,7 +896,7 @@ log_dir_remove(){
 # log_rotate_script_create "$LOG_FILE"
 ######################################################################################################
 log_rotate_script_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	local LLOG_FILE="${1:-/var/log/${INST_NAME}/${INST_NAME}.log}"
 	local LLOG_FILE_WILD="$(dirname "$LLOG_FILE")/*.log"
@@ -797,7 +978,7 @@ LOGROTATESCR
 # log_rotate_script_remove() Remove the log rotate script..
 ######################################################################################################
 log_rotate_script_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LLOG_FILE="$1"
 
 	if [ -z "$LLOG_FILE" ]; then
@@ -875,23 +1056,22 @@ var_escape(){
 	local LVAR="$1"
 
 	[ $DEBUG -gt 0 ] && error_echo "Escaping string '${LVAR}'"
-
-	# escape the escapes..
-	LVAR="$(echo "$LVAR" | sed -e 's/\\/\\\\/g')"
-	# escape the $s
-	LVAR="$(echo "$LVAR" | sed -e 's/\$/\\\$/g')"
-	# escape the `s
-	LVAR="$(echo "$LVAR" | sed -e 's/`/\\`/g')"
-
-	echo "$LVAR"
-
+	local LESCVAR="$(echo "$LVAR" | sed -e 's/\//\\\//g;s/\\/\\\\/g;s/\$/\\\$/g;s/`/\\`/g;s/"/\\"/g;s/\./\\./g;s/\*/\\*/g')"
+	echo "$LESCVAR"
+	#~ # escape the escapes..
+	#~ LVAR="$(echo "$LVAR" | sed -e 's/\\/\\\\/g')"
+	#~ # escape the $s
+	#~ LVAR="$(echo "$LVAR" | sed -e 's/\$/\\\$/g')"
+	#~ # escape the `s
+	#~ LVAR="$(echo "$LVAR" | sed -e 's/`/\\`/g')"
+	#~ echo "$LVAR"
 }
 
 ######################################################################################################
 # env_file_create() Create the service config file.  Pass the names of the VARS to be written to the env file..
 ######################################################################################################
 env_file_create(){
-	#~ debug_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_ENVFILE="$1"
 	local LARGS=
 	local LARG=
@@ -1141,7 +1321,7 @@ service_is_installed(){
 #   Returns 0 if enabled, 1 if not
 ######################################################################################################
 service_is_enabled(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 
 	if [ $USE_SYSTEMD -lt 1 ]; then
@@ -1158,7 +1338,7 @@ service_is_enabled(){
 #   Returns 0 if running, 1 if not
 ######################################################################################################
 service_is_running(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 
 	if [ $USE_SYSTEMD -lt 1 ]; then
@@ -1170,12 +1350,45 @@ service_is_running(){
 
 }
 
-
 ######################################################################################################
 # ifaces_get( bIncludeVirtuals ) return a space-delimited list of network interface devices..
 ######################################################################################################
 ifaces_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
+	local bINCLUDE_VIRTUAL="${1:-0}"
+	local LIFACES=
+	local LIFACE=
+
+	if [ $bINCLUDE_VIRTUAL -lt 1 ]; then
+		for LIFACE in $(ls -1 /sys/class/net/ | grep -v -E '^lo$' )
+		do
+			# Skip any virtual interfaces except for PPPoE ones..
+			if [ -e "/sys/devices/virtual/net/${LIFACE}" ]; then
+				[[ "$LIFACE" != "ppp"* ]] && continue
+			fi
+			LIFACES="${LIFACES} ${LIFACE}"
+		done
+	else
+		LIFACES=$(ls -1 /sys/class/net/ | xargs)
+	fi
+
+	if [ ! -z "$LIFACES" ]; then
+		[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ ) -- Interfaces: ${LIFACES}"
+		echo "$LIFACES"
+		return 0
+	fi
+
+	[ $VERBOSE -gt 0 ] && error_echo "Error: no network interfaces are linked."
+	return 1
+}
+
+
+
+######################################################################################################
+# ifaces_get( bIncludeVirtuals ) return a space-delimited list of network interface devices..
+######################################################################################################
+ifaces_get_old(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local bINCLUDE_VIRTUAL="${1:-0}"
 	local LIFACES=
 	local LIFACE=
@@ -1183,7 +1396,7 @@ ifaces_get(){
 	for LIFACE in $(ls -1 /sys/class/net/ | grep -v -E '^lo$' )
 	do
 		# Skip any virtual interfaces..
-		if [ $bINCLUDE_VIRTUAL -lt 1 ] && [ $(ls -l /sys/class/net/ | grep "${LIFACE} ->" | grep -c '/virtual/') -gt 0 ]; then
+		if [ $bINCLUDE_VIRTUAL -lt 1 ] && [ $(ls -l /sys/class/net/ | grep -F "${LIFACE} ->" | grep -c '/virtual/') -gt 0 ]; then
 			[[ "$LIFACE" != "ppp"* ]] && continue
 		fi
 		LIFACES="${LIFACES} ${LIFACE}"
@@ -1204,7 +1417,7 @@ ifaces_get(){
 # ifacess_get_links() returns a space-delimited list of LINKED network interface devices..
 ######################################################################################################
 ifaces_get_links(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local bINCLUDE_VIRTUAL="${1:-0}"
 	local LIFACE=
 	local LIFACES=
@@ -1261,10 +1474,20 @@ ifaces_get_links(){
 }
 
 ########################################################################################
+# iface_is_linked( $NETDEV) returns 0 if interface link is UP, 1 if DOWN
+########################################################################################
+iface_is_linked(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LIFACE="$1"
+	
+	[ $(ip link show "$LIFACE" | grep -c 'state UP') -gt 0 ] && return 0 || return 1
+}
+
+########################################################################################
 # iface_is_valid( $NETDEV) Validates an interface name. returns 0 == valid; 1 == invalid
 ########################################################################################
 iface_is_valid(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 
 	[ -z "$LIFACE" ] && return 1
@@ -1280,7 +1503,7 @@ iface_is_valid(){
 # iface_is_dhcp( $NETDEV) returns 0 == dhcp assigned address; 1 == static address
 ########################################################################################
 iface_is_dhcp(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 
 	[ $(ip -4 addr show "${LIFACE}" | grep -c 'dynamic') -lt 1 ] && return 1 || return 0
@@ -1291,7 +1514,7 @@ iface_is_dhcp(){
 # iface_is_static( $NETDEV) returns 0 == static address; 1 == dhcp assigned address
 ########################################################################################
 iface_is_static(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 
 	[ $(ip -4 addr show "${LIFACE}" | grep -c 'dynamic') -lt 1 ] && return 0 || return 1
@@ -1309,16 +1532,16 @@ echo_return(){
 # iface_is_wireless( $NETDEV) Validates an interface as wireless. returns 0 == valid; 1 == invalid
 ########################################################################################
 iface_is_wireless(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	if [ -z "$LIFACE" ]; then
 		return 1
 	fi
 	if [ -e "/sys/class/net/${LIFACE}/wireless" ]; then
-		[ $DEBUG -gt 0 ] && error_echo "Error: ${LIFACE} is a wireless network interface."
+		[ $DEBUG -gt 1 ] && error_echo "${LIFACE} is a wireless network interface."
 		return 0
 	fi
-	[ $DEBUG -gt 0 ] && error_echo "Error: ${LIFACE} is not a wireless network interface."
+	[ $DEBUG -gt 1 ] && error_echo "${LIFACE} is NOT a wireless network interface."
 	return 1
 }
 
@@ -1326,7 +1549,7 @@ iface_is_wireless(){
 # iface_is_wired( $NETDEV) Validates an interface as not wireless. returns 0 == valid; 1 == invalid
 ########################################################################################
 iface_is_wired(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	if [ -z "$LIFACE" ]; then
 		return 1
@@ -1345,7 +1568,7 @@ iface_is_wired(){
 # iface_has_link( $NETDEV) Tests to see if an interface is linked. returns 0 == linked; 1 == no link;
 ########################################################################################
 iface_has_link(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LIS_WIRELESS=
 
@@ -1382,12 +1605,12 @@ iface_has_link(){
 ########################################################################################
 
 iface_primary_geta() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	#~ echo "$(ls -1 '/sys/class/net' | grep -v -E '^lo$' | sort | head -n1)"
 	local LIFACE="$(ls -1 '/sys/class/net' | sort | grep -m1 -v -E '^lo$')"
 
 	if [ ! -z "$LIFACE" ]; then
-		if [ $(ethtool "$LIFACE" | egrep -c 'Link detected: yes') -lt 1 ]; then
+		if [ $(ethtool "$LIFACE" | grep -c 'Link detected: yes') -lt 1 ]; then
 			[ $VERBOSE -gt 0 ] && error_echo "Warning: no link detected on primary interface ${LIFACE}.."
 		fi
 	else
@@ -1402,7 +1625,7 @@ iface_primary_geta() {
 # iface_primary_getb( ) Get the 1st linked nic with a gateway or 1st physical nic
 ########################################################################################
 iface_primary_getb() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local bINCLUDE_VIRTUAL="${1:-0}"
 	local bLINKED_ONLY="${2:-0}"
 
@@ -1435,7 +1658,7 @@ iface_primary_getb() {
 
 
 iface_primary_get() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local PREFER_WIRELESS=${1:-0}
 	local HASLINK=0
 	local IFACE=''
@@ -1507,16 +1730,16 @@ iface_primary_get() {
 }
 
 iface_secondary_get() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSKIPDEV="$1"
 	local LHASLINK=0
 	[ ! -z "$LSKIPDEV" ] && LSKIPDEV="|${LSKIPDEV}"
 
 	# Get the 2nd entry..
-	local LIFACE=$(ls -1 /sys/class/net | sort | egrep -v "lo${LSKIPDEV}" | sed -n 2p)
+	local LIFACE=$(ls -1 /sys/class/net | sort | grep -v -E "lo${LSKIPDEV}" | sed -n 2p)
 
 	if [ ! -z "$LIFACE" ]; then
-		if [ $(ethtool "$LIFACE" | egrep -c 'Link detected: yes') -lt 1 ]; then
+		if [ $(ethtool "$LIFACE" | grep -c 'Link detected: yes') -lt 1 ]; then
 			[ $VERBOSE -gt 0 ] && error_echo "Warning: no link detected on secondary interface ${LIFACE}.."
 		fi
 	else
@@ -1531,7 +1754,7 @@ iface_secondary_get() {
 # iface_secondary_getb( ) Get the linked 1st nic without a gateway or 2nd physical nic
 ########################################################################################
 iface_secondary_getb() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local bINCLUDE_VIRTUAL="${1:-0}"
 	local LIFACE=
 	local LIFACES=
@@ -1577,7 +1800,7 @@ iface_wireless_get() {
 #
 ########################################################################################
 default_octet_get() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	case "$(hostname)" in
 		scserver)
@@ -1600,6 +1823,9 @@ default_octet_get() {
 			;;
 		mountaintop-nas)
 			echo '222'
+			;;
+		speedbox)
+			echo '234'
 			;;
 		unifi-box)
 			echo '234'
@@ -1635,7 +1861,7 @@ ipaddress_validate_old(){
     local  LIP=$1
     local  LVALID_IP=1
 
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	if [ -z "$LIP" ]; then
 		return 1
@@ -1643,7 +1869,7 @@ ipaddress_validate_old(){
 
 	# Can't use sipcalc as it will validate a interface name too
 	#~ if [ ! -z "$(which sipcalc)" ]; then
-		#~ LVALID_IP=$(sipcalc -c "$LIP" | egrep -c 'ERR')
+		#~ LVALID_IP=$(sipcalc -c "$LIP" | grep -c 'ERR')
 	#~ else
 		if [[ $LIP =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
 			OIFS=$IFS
@@ -1666,7 +1892,7 @@ ipaddress_validate_old(){
 ########################################################################################
 
 ipaddress_validate(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIP=$1
 	local LVALID_IP=1
 
@@ -1704,7 +1930,7 @@ ipaddress_validate(){
 ########################################################################################
 
 ipaddress_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LNETDEV="$1"
 	local LIPADDR=
 
@@ -1739,7 +1965,7 @@ ipaddr_is_valid(){
 }
 
 ipaddr_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	# FLAW: ip cmd only returns an ipv4 addr if there is a link..
 	#~ local LIPADDR=$(ip -4 addr | grep -v -E 'inet .* lo' | grep -m1 -E 'inet ' | sed -n -e 's/^.*inet \([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\)\/.*/\1/p')
 	local LIPADDR="$(networkctl status 2>/dev/null | sed -n -e 's/^\s\+Address: \([0-9\.]\+\).*$/\1/p')"
@@ -1750,7 +1976,7 @@ ipaddr_get(){
 }
 
 ipaddr_primary_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	# FLAW: ip cmd only returns an ipv4 addr if there is a link..
 	#~ local LIPADDR=$(ip -4 addr | grep -v -E 'inet .* lo' | grep -m1 -E 'inet ' | sed -n -e 's/^.*inet \([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\)\/.*/\1/p')
 	local LIPADDR="$(networkctl status 2>/dev/null | sed -n -e 's/^\s\+Address: \([0-9\.]\+\).*$/\1/p')"
@@ -1765,7 +1991,7 @@ ipaddr_primary_get(){
 }
 
 ipaddr_secondary_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	# FLAW: ip cmd only returns an ipv4 addr if there is a link..
 	#~ local LIPADDR=$(ip -4 addr | sort | grep -v -E 'inet .* lo' | grep -m1 -E 'inet ' | sed -n -e 's/^.*inet \([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\)\/.*/\1/p')
 	local LIPADDR=$(ip -4 addr | sort | grep -v -E 'inet .* lo' | grep -E 'inet ' | sed -n -e 's/^.*inet \([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\)\/.*/\1/p' | sed -n 2p)
@@ -1784,7 +2010,7 @@ ipaddr_secondary_get(){
 
 
 ipaddrs_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDRS=$(ip -br a | grep -v -E '^lo.*' | awk '{ print $3 }' | sed -n -e 's#^\(.*\)/.*$#\1#p')
 
 	[ $DEBUG -gt 0 ] && error_echo "IP addresses == ${LIPADDRS}"
@@ -1793,7 +2019,7 @@ ipaddrs_get(){
 }
 
 subnet_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSUBNET=
 
 	if [ -z "$INST_IFACE" ]; then
@@ -1818,16 +2044,17 @@ subnet_get(){
 ########################################################################################
 
 iface_subnet_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
-	local LSUBNET=$(ip -br a | grep "$LIFACE" | awk '{ print $3 }' | sed -n 's#\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.\)[0-9]\{1,3\}/\([0-9]\{1,2\}\).*$#\10/\2#p')
+	local LSUBNET="$(ip route | grep "$LIFACE" | sed -n '2p' | awk '{ print $1 }')"
+	[ -z "$LSUBNET" ] && LSUBNET="$(ip -br a | grep "$LIFACE" | awk '{ print $3 }' | sed -n 's#\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.\)[0-9]\{1,3\}/\([0-9]\{1,2\}\).*$#\10/\2#p')"
 
 	[ $DEBUG -gt 0 ] && error_echo "INST_SUBNET of ${LIFACE} == ${LSUBNET}"
 	echo "$LSUBNET"
 }
 
 iface_gateway_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	#~ local LGATEWAY="$(route -n | grep -E -o "^.*([0-9]{1,3}[\.]){3}[0-9]{1,3}.*UG.*${LIFACE}" | awk '{ print $2 }')"
 	local LGATEWAY="$(networkctl status "$LIFACE" 2>/dev/null | grep 'Gateway' | awk '{ print $2 }')"
@@ -1849,7 +2076,7 @@ iface_gateway_get(){
 ########################################################################################
 
 ipaddress_subnet_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local IPADDR="$1"
 	local LSUBNET=
 
@@ -1877,7 +2104,7 @@ ipaddress_subnet_get(){
 ########################################################################################
 
 ipaddr_subnet_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR="$1"
 	local LSUBNET=
 
@@ -1908,7 +2135,7 @@ ipaddr_subnet_get(){
 ########################################################################################
 
 iface_ipaddress_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LIPADDR=
 
@@ -1938,7 +2165,7 @@ iface_ipaddress_get(){
 
 
 iface_hwaddress_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 
 	if [ -z "$LIFACE" ]; then
@@ -1967,7 +2194,7 @@ iface_hwaddress_get(){
 #
 ########################################################################################
 ipaddress_iface_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR="$1"
 	local LIFACE=
 	ipaddress_validate "$LIPADDR"
@@ -2000,7 +2227,7 @@ ipaddress_iface_get(){
 #   /etc/services.  returns 0 == service exists || 1 == service does not exist.
 ######################################################################################################
 firewall_service_exists() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 	local LCONF_FILE='/etc/services'
 	[ -z "$LSERVICE" ] && return 1
@@ -2013,7 +2240,7 @@ firewall_service_exists() {
 #   /etc/services and comments it out.  returns 0 == service commented || 1 == service still uncommented.
 ######################################################################################################
 firewall_service_comment() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 	local LCONF_FILE='/etc/services'
 	[ -z "$LSERVICE" ] && return 1
@@ -2031,7 +2258,7 @@ firewall_service_comment() {
 #   /etc/services and comments it out.  returns 0 == service commented || 1 == service still uncommented.
 ######################################################################################################
 firewall_service_uncomment() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 	local LCONF_FILE='/etc/services'
 	[ -z "$LSERVICE" ] && return 1
@@ -2051,7 +2278,7 @@ firewall_service_uncomment() {
 #		 -- opens a /etc/services defined /etc/services service.
 ######################################################################################################
 firewall_service_open() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 	local LPARAMS="$2"
 	local LPARAM=
@@ -2097,7 +2324,7 @@ firewall_service_open() {
 }
 
 firewall_service_close() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 	local LPARAMS="$2"
 	local LPARAM=
@@ -2146,6 +2373,7 @@ firewall_service_close() {
 # firewall_app_exists ( app_name ) Returns 0 if a defined app exists..
 ######################################################################################################
 firewall_app_exists(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	if [ $USE_FIREWALLD -gt 0 ]; then
 		[ $(firewall-cmd --get-services | xargs -n 1 | grep -c -E "^${LAPP_NAME}\$") -gt 0 ] && return 0 || return 1
@@ -2160,7 +2388,7 @@ firewall_app_exists(){
 #	file for ufw or firewalld.
 ######################################################################################################
 firewall_app_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	local LAPP="$2"
 	local LPUBLIC=${3:-0}
@@ -2171,13 +2399,13 @@ firewall_app_create(){
 
 
 	if [ -z "$LAPP" ]; then
-		error_echo "Error: no app file passed."
+		log_msg "Error: no app file passed."
 	fi
 
 	if [ $USE_FIREWALLD -gt 0 ]; then
 		LCONF_DIR='/etc/firewalld/services'
 		if [ ! -d "$LCONF_DIR" ]; then
-			error_echo "Error: ${LCONF_DIR} not found."
+			log_msg "Error: ${LCONF_DIR} not found."
 			return 1
 		fi
 		LCONF_FILE="${LCONF_DIR}/${LAPP_NAME}.xml"
@@ -2194,7 +2422,7 @@ firewall_app_create(){
 
 		LCONF_DIR='/etc/ufw/applications.d'
 		if [ ! -d "$LCONF_DIR" ]; then
-			error_echo "Error: ${LCONF_DIR} not found."
+			log_msg "Error: ${LCONF_DIR} not found."
 			return 1
 		fi
 
@@ -2228,7 +2456,7 @@ firewall_app_create(){
 	##############################################################################################
 	##############################################################################################
 
-	error_echo "Creating firewall application file ${LCONF_FILE}.."
+	[ $QUIET -lt 1 ] && log_msg "Creating firewall application file ${LCONF_FILE}.."
 
 	echo "$LAPP" >"$LCONF_FILE"
 	chown root:root "$LCONF_FILE"
@@ -2258,7 +2486,7 @@ firewall_app_create(){
 		firewall-cmd --reload
 
 		if [ $(firewall-cmd --get-services | xargs -n 1 | grep -c -E "^${LAPP_NAME}\$") -lt 1 ]; then
-			error_echo "Error: ${LAPP_NAME} was not registered as a service."
+			log_msg "Error: ${LAPP_NAME} was not registered as a service."
 			return 1
 		fi
 	else
@@ -2266,7 +2494,7 @@ firewall_app_create(){
 		ufw app info "$LAPP_NAME"
 
 		if [ $(ufw app list | grep -c -E "^\s+${LAPP_NAME}$") -lt 1 ]; then
-			error_echo "Error: ${LAPP_NAME} was not registered as a service."
+			log_msg "Error: ${LAPP_NAME} was not registered as a service/application."
 			return 1
 		fi
 
@@ -2278,7 +2506,7 @@ firewall_app_create(){
 #	returns 0 == file exists || 1 == file does not exist.
 ######################################################################################################
 firewall_app_file_check(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	local LCONF_FILE=
 	if [ $USE_FIREWALLD -gt 0 ]; then
@@ -2297,7 +2525,7 @@ firewall_app_file_check(){
 #		Opens a defined ufw app profile or firewalld service.xml
 ########################################################################################
 firewall_app_open(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	local LPARAMS="$2"
 	local LPARAM=
@@ -2360,7 +2588,7 @@ firewall_app_open(){
 #		Opens a defined ufw app profile or firewalld service.xml
 ########################################################################################
 firewall_app_close(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	local LPARAMS="$2"
 	local LPARAM=
@@ -2423,7 +2651,7 @@ firewall_app_close(){
 #		Opens a defined ufw app profile or firewalld service.xml
 ########################################################################################
 firewall_app_close_all(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	local LRULE=
 	local LFWZONE=
@@ -2454,13 +2682,19 @@ firewall_app_close_all(){
 		firewall-cmd --reload
 
 	elif [ $USE_UFW -gt 0 ]; then
-		LRULE="$(ufw status | grep -E "^${LAPP_NAME}\s+ALLOW.*$")"
-		if [ $(echo "$LRULE" | grep -c 'Anywhere') -gt 0 ]; then
-			ufw delete allow "$LAPP_NAME" >/dev/null && error_echo "Closing Anywhere for application ${LAPP_NAME}.."
-		else
-			LSUBNET="$(echo "$LRULE" | xargs | sed -n -e 's/^.*ALLOW\s\+\(.*\)$/\1/p')"
-			[ ! -z "$LSUBNET" ] && ufw delete allow from "$LSUBNET" to any app "$LAPP_NAME" >/dev/null && [ $VERBOSE -gt 0 ] && error_echo "Closing ${LSUBNET} for application ${LAPP_NAME}.."
-		fi
+		while :;
+		do
+			LRULE="$(ufw status | grep -m1 -E "^${LAPP_NAME}\s+ALLOW.*$")"
+
+			[ -z "$LRULE" ] && break
+
+			if [ $(echo "$LRULE" | grep -c 'Anywhere') -gt 0 ]; then
+				ufw delete allow "$LAPP_NAME" >/dev/null && error_echo "Closing Anywhere for application ${LAPP_NAME}.."
+			else
+				LSUBNET="$(echo "$LRULE" | xargs | sed -n -e 's/^.*ALLOW\s\+\(.*\)$/\1/p')"
+				[ ! -z "$LSUBNET" ] && ufw delete allow from "$LSUBNET" to any app "$LAPP_NAME" >/dev/null && [ $VERBOSE -gt 0 ] && error_echo "Closing ${LSUBNET} for application ${LAPP_NAME}.."
+			fi
+		done
 	fi
 
 	return 0
@@ -2473,7 +2707,7 @@ firewall_app_close_all(){
 # firewall_app_close( app_name, iface || ipaddr )
 ########################################################################################
 firewall_app_closex(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	local LPARAM="$2"
 	local LFWZONE=
@@ -2515,7 +2749,7 @@ firewall_app_closex(){
 #		Returns 0 if the firewall is not open for the app, 1 if opened for the app.
 ########################################################################################
 iface_firewall_app_check(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LAPP_NAME="$2"
 	local LFWZONE=
@@ -2557,7 +2791,7 @@ iface_firewall_app_check(){
 #		Returns 0 if the firewall is not open for the app, 1 if opened for the app.
 ########################################################################################
 ipaddr_firewall_app_check(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR="$1"
 	local LAPP_NAME="$2"
 	local LFWZONE=
@@ -2592,7 +2826,7 @@ ipaddr_firewall_app_check(){
 #	all subnets, i.e. public.
 ########################################################################################
 iface_firewall_app_open(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LAPP_NAME="$2"
 	local LFWZONE=
@@ -2633,7 +2867,7 @@ iface_firewall_app_open(){
 #   the service from all subnets, i.e. public.
 ########################################################################################
 iface_firewall_service_open(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LSERVICE="$2"
 	local LFWZONE=
@@ -2673,7 +2907,7 @@ iface_firewall_service_open(){
 #	for the app from all subnets, i.e. public.
 ########################################################################################
 iface_firewall_app_close(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LAPP_NAME="$2"
 	local LFWZONE=
@@ -2715,7 +2949,7 @@ iface_firewall_app_close(){
 #	all subnets, i.e. public.
 ########################################################################################
 ipaddr_firewall_app_open(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR="$1"
 	local LAPP_NAME="$2"
 	local LFWZONE=
@@ -2757,7 +2991,7 @@ ipaddr_firewall_app_open(){
 #	for the app from all subnets, i.e. public.
 ########################################################################################
 ipaddr_firewall_app_close(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR="$1"
 	local LAPP_NAME="$2"
 	local LFWZONE=
@@ -2797,7 +3031,7 @@ ipaddr_firewall_app_close(){
 
 # echos port/protocol from a named service in /etc/services; returns 0: service exists; 1: service does not exist
 firewall_service_portprot_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	local LSERVICES='/etc/services'
 	local LPORTSPROTS=
@@ -2813,7 +3047,7 @@ firewall_service_portprot_get(){
 
 
 firewall_apps_list(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LOPEN_ONLY=${$:-0}
 	if [ $USE_FIREWALLD -gt 0 ]; then
 		if [ $LOPEN_ONLY -gt 0 ]; then
@@ -2833,7 +3067,7 @@ firewall_apps_list(){
 
 # Returns 0 == service/app not open; 1 == app/service open on firewall..
 firewall_app_check(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	local LPUBLIC=${2:-0}
 	local LFWZONE=
@@ -2876,7 +3110,7 @@ firewall_app_check(){
 }
 
 firewall_app_info(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	if [ $USE_FIREWALLD -gt 0 ]; then
 		firewall-cmd "--info-service=${LAPP_NAME}"
@@ -2887,7 +3121,7 @@ firewall_app_info(){
 }
 
 firewall_app_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LAPP_NAME="$1"
 	local LCONF_DIR=
 	local LCONF_FILE=
@@ -2919,7 +3153,7 @@ firewall_app_remove(){
 }
 
 firewall_port_open(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LPROTOCOL="$1"
 	local LPORT="$2"
 	local LPARAMS="$3"
@@ -2961,7 +3195,7 @@ firewall_port_open(){
 }
 
 firewall_port_close(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LPROTOCOL="$1"
 	local LPORT="$2"
 	local LPARAMS="$3"
@@ -3004,7 +3238,7 @@ firewall_port_close(){
 
 
 iface_firewall_zone_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LFWZONE=
 
@@ -3024,7 +3258,7 @@ iface_firewall_zone_get(){
 }
 
 ipaddr_firewall_zone_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR="$1"
 	local LFWZONE=
 
@@ -3047,12 +3281,12 @@ ipaddr_firewall_zone_get(){
 # ifaces_detect()  Re-detect network devices using udev..DEPRECATED??
 #########################################################################################
 ifaces_detect(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local DEV
 	local NETDEVS
 	local NETRULES
 
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	# Only do this on Ubuntu systems..
 	if [ $ISFEDORA -gt 0 ]; then
@@ -3073,9 +3307,9 @@ ifaces_detect(){
 	mv -f "$NETRULES" "${NETRULES}.not"
 
 	if [ $ALL_NICS -gt 0 ]; then
-		NETDEVS=$(ls -1 /sys/class/net | sort | egrep -v '^lo$' )
+		NETDEVS=$(ls -1 /sys/class/net | sort | grep -v -E '^lo$' )
 	else
-		NETDEVS=$(ls -1 /sys/class/net | sort | egrep -v -m1 '^lo$' )
+		NETDEVS=$(ls -1 /sys/class/net | sort | grep -m1 -v -E '^lo$' )
 	fi
 
 	echo -e 'Detecting network devices..'
@@ -3104,7 +3338,7 @@ ifaces_detect(){
 ########################################################################################
 
 iface_firewall_port_check(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LPROTOCOL=$2
 	local LPORT=$3
@@ -3135,7 +3369,7 @@ iface_firewall_port_check(){
 }
 
 iface_firewall_port_open(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LPROTOCOL=$2
 	local LPORT=$3
@@ -3182,7 +3416,7 @@ iface_firewall_port_open(){
 }
 
 iface_firewall_port_close(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
 	local LPROTOCOL=$2
 	local LPORT=$3
@@ -3235,7 +3469,7 @@ iface_firewall_port_close(){
 ########################################################################################
 
 ipaddr_firewall_port_check(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR="$1"
 	local LPROTOCOL=$2
 	local LPORT=$3
@@ -3271,7 +3505,7 @@ ipaddr_firewall_port_check(){
 
 # A NULL ipaddr will not result in a public open, unlike iface_firewall_port_open()
 ipaddr_firewall_port_open(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR="$1"
 	local LPROTOCOL=$2
 	local LPORT=$3
@@ -3314,7 +3548,7 @@ ipaddr_firewall_port_open(){
 }
 
 ipaddr_firewall_port_close(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LIPADDR="$1"
 	local LPROTOCOL="$2"
 	local LPORT="$3"
@@ -3347,7 +3581,7 @@ ipaddr_firewall_port_close(){
 # conf_dir_create() Creates the service config dir..
 ######################################################################################################
 conf_dir_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_CONFDIR="${1:-/etc/${INST_NAME}}"
 
 	if [ $NEEDSCONF -lt 1 ]; then
@@ -3365,7 +3599,7 @@ conf_dir_create(){
 # conf_file_remove() Remove the service config dir..
 ######################################################################################################
 conf_dir_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_CONFDIR="${1:-/etc/${INST_NAME}}"
 
 	if [ -d "$LINST_CONFDIR" ]; then
@@ -3380,7 +3614,7 @@ conf_dir_remove(){
 # conf_file_create() Create the service config file..
 ######################################################################################################
 conf_file_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	
 	local LINST_CONF="$1"
 	local LINST_CONFDIR=
@@ -3416,7 +3650,7 @@ conf_file_create(){
 # conf_file_remove() Remove the service config file..
 ######################################################################################################
 conf_file_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	if [ $NEEDSCONF -lt 1 ]; then
 		return 1
@@ -3440,7 +3674,7 @@ conf_file_remove(){
 # service_priority_set() Sets values to run the daemon at a higher/normal priority
 ######################################################################################################
 service_priority_set(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $NEEDSPRIORITY -gt 0 ]; then
 		if [ $USE_UPSTART -gt 0 ]; then
 			INST_NICE=-19
@@ -3502,7 +3736,7 @@ is_service(){
 # service_create() Create the service init file..
 ######################################################################################################
 service_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	if [ $USE_SYSV -eq 0 ]; then
 		error_echo "${FUNCNAME}( $@ ) sysv_init_file_create is deprecated.  Use systemd"
@@ -3524,7 +3758,7 @@ service_create(){
 # service_tmpfiles_create() Create the run-time directories / tmp files
 ######################################################################################################
 service_tmpfiles_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	if [ $USE_UPSTART -gt 0 ]; then
 		error_echo "${FUNCNAME}( $@ ) upstart_tmpfiles_create not implimented."
@@ -3540,7 +3774,7 @@ service_tmpfiles_create(){
 # service_tmpfiles_create() Create the run-time directories / tmp files
 ######################################################################################################
 service_tmpfiles_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	if [ $USE_UPSTART -gt 0 ]; then
 		error_echo "${FUNCNAME}( $@ ) upstart_tmpfiles_create not implimented."
@@ -3557,7 +3791,7 @@ service_tmpfiles_remove(){
 # service_prestart_set() Update service init file with prestart args..
 ######################################################################################################
 service_prestart_set(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	if [ $USE_UPSTART -gt 0 ]; then
 		error_echo "${FUNCNAME}( $@ ) upstart_conf_file_prestart_set $@ not implimented."
@@ -3573,7 +3807,7 @@ service_prestart_set(){
 # service_fork_set() Update service init file with forking type..
 ######################################################################################################
 service_fork_set(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	if [ $USE_UPSTART -gt 0 ]; then
 		upstart_conf_file_fork_set $@
@@ -3590,7 +3824,7 @@ service_fork_set(){
 # service_start_after_set() Set the service to start after another service..
 ######################################################################################################
 service_start_after_set(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $USE_UPSTART -gt 0 ]; then
 		upstart_conf_file_start_after_set $@
 	elif [ $USE_SYSTEMD -gt 0 ]; then
@@ -3604,7 +3838,7 @@ service_start_after_set(){
 # service_debug_create() Create a bash script for debugging the service
 ######################################################################################################
 service_debug_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	EXEC_ARGS="$@"
 	DEBUG_SCRIPT="${INST_BIN}_debug.sh"
 
@@ -3662,7 +3896,7 @@ service_debug_remove(){
 # service_update() Update the service script
 ######################################################################################################
 service_update(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $USE_UPSTART -gt 0 ]; then
 		upstart_conf_file_create $@
 	elif [ $USE_SYSTEMD -gt 0 ]; then
@@ -3678,7 +3912,7 @@ service_update(){
 # service_enable() Enable the service control links..
 ######################################################################################################
 service_enable(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	if [ $USE_UPSTART -gt 0 ]; then
 		sysv_init_file_disable $@
@@ -3698,7 +3932,7 @@ service_enable(){
 # service_disable() Disable the service, i.e. prevent it from autostarting..
 ######################################################################################################
 service_disable(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	if [ $REMOVEALL -gt 0 ]; then
 		upstart_conf_file_disable $@
@@ -3720,7 +3954,7 @@ service_disable(){
 # service_remove() Uninstall the service and remove all scripts, config files, etc.
 ######################################################################################################
 service_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	service_stop $@
 	service_disable $@
@@ -3748,7 +3982,7 @@ service_remove(){
 # service_start() Start the service..
 ######################################################################################################
 service_start() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 
 	if [ -z "$LSERVICE" ]; then
@@ -3778,7 +4012,7 @@ service_start() {
 # service_start_at( startdatetime | numseconds ) Start the service at a set time or number of seconds in the future..
 ######################################################################################################
 service_start_at() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 	local LWAIT="$2"
 	local LSTARTTIME=
@@ -3817,7 +4051,7 @@ service_start_at() {
 # service_stop() Stop the service..
 ######################################################################################################
 service_stop() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 
 	if [ -z "$LSERVICE" ]; then
@@ -3848,7 +4082,7 @@ service_stop() {
 # service_status() Get the status of the service..
 ######################################################################################################
 service_status() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME} $@"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 
 	if [ -z "$LSERVICE" ]; then
@@ -3880,7 +4114,7 @@ service_status() {
 # systemd_tmpfilesd_conf_create 'd' servicename 0750 username usergroup age
 ######################################################################################################
 systemd_tmpfilesd_conf_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local L_TYPE="$1"
 	local L_INST_NAME="$2"
 	local L_MODE="$3"
@@ -3923,7 +4157,7 @@ systemd_tmpfilesd_conf_create(){
 # systemd_tmpfilesd_conf_remove() Remove the systemd-tmpfiles conf file.
 ######################################################################################################
 systemd_tmpfilesd_conf_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSERVICE="$1"
 
 	if [ -z "$LSERVICE" ]; then
@@ -3941,7 +4175,7 @@ systemd_tmpfilesd_conf_remove(){
 # systemd_unit_file_create() Create the systemd unit file.  Call with execution args in a string
 ######################################################################################################
 systemd_unit_file_create(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	local LEXEC_ARGS="${@:2}"
 	local LUNIT_FILE=
@@ -3982,35 +4216,35 @@ systemd_unit_file_create(){
 		INST_ENVFILE="/etc/sysconfig/${INST_NAME}"
 	fi
 
-cat >"$LUNIT_FILE" <<SYSTEMD_SCR1;
-## ${LUNIT_FILE} -- ${LSZDATE}
-## systemctl service unit file
+	cat >"$LUNIT_FILE" <<-SYSTEMD_SCR1;
+	## ${LUNIT_FILE} -- ${LSZDATE}
+	## systemctl service unit file
 
-[Unit]
-Description=$INST_DESC
-After=network-online.target
+	[Unit]
+	Description=$INST_DESC
+	After=network-online.target
 
-[Service]
-#UMask=002
-Nice=${INST_NICE}
-LimitRTPRIO=${INST_RTPRIO}
-LimitMEMLOCK=${INST_MEMLOCK}
-EnvironmentFile=${INST_ENVFILE}
-RuntimeDirectory=${INST_NAME}
-#WorkingDirectory=${INST_NAME}
-Type=simple
-User=${INST_USER}
-Group=${INST_GROUP}
-ExecStartPre=${INST_PRE_EXEC_ARGS}
-ExecStart=${INST_BIN} ${LEXEC_ARGS}
-PIDFile=${INST_PID}
-RestartSec=5
-Restart=on-failure
+	[Service]
+	#UMask=002
+	Nice=${INST_NICE}
+	LimitRTPRIO=${INST_RTPRIO}
+	LimitMEMLOCK=${INST_MEMLOCK}
+	EnvironmentFile=${INST_ENVFILE}
+	RuntimeDirectory=${INST_NAME}
+	#WorkingDirectory=${INST_NAME}
+	Type=simple
+	User=${INST_USER}
+	Group=${INST_GROUP}
+	ExecStartPre=${INST_PRE_EXEC_ARGS}
+	ExecStart=${INST_BIN} ${LEXEC_ARGS}
+	PIDFile=${INST_PID}
+	RestartSec=5
+	Restart=on-failure
 
-[Install]
-WantedBy=multi-user.target
+	[Install]
+	WantedBy=multi-user.target
 
-SYSTEMD_SCR1
+	SYSTEMD_SCR1
 
 	# If no pid file, remove the reference..
 	if [ -z "$INST_PID" ]; then
@@ -4036,7 +4270,7 @@ SYSTEMD_SCR1
 # systemd_unit_file_pidfile_set() Insert or update the PIDFile path
 ######################################################################################################
 systemd_unit_file_pidfile_set(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LUNIT=
 	local LUNIT_FILE=
 	local L_INST_NAME=
@@ -4053,9 +4287,9 @@ systemd_unit_file_pidfile_set(){
 
 	L_PIDFILE="/var/run/${L_INST_NAME}/${L_INST_NAME}.pid"
 
-# [Service]
-# RuntimeDirectory=squeezelite
-# PIDFile=/var/run/squeezelite/squeezelite.pid
+	# [Service]
+	# RuntimeDirectory=squeezelite
+	# PIDFile=/var/run/squeezelite/squeezelite.pid
 
     if [ -f "$LUNIT_FILE" ]; then
 
@@ -4075,7 +4309,7 @@ systemd_unit_file_pidfile_set(){
 # systemd_unit_file_pidfile_remove() Insert or update the PIDFile path
 ######################################################################################################
 systemd_unit_file_pidfile_remove(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
 		UNIT="$INST_NAME"
 	else
@@ -4096,6 +4330,7 @@ systemd_unit_file_pidfile_remove(){
 # systemd_unit_file_runtimedir_set() Insert or update the RuntimeDirectory path
 ######################################################################################################
 systemd_unit_file_runtimedir_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
 		UNIT="$INST_NAME"
 	else
@@ -4105,9 +4340,9 @@ systemd_unit_file_runtimedir_set(){
 
 	local L_INST_NAME="$(echo "$INST_NAME" | sed -e 's/^\(.*\)\..*$/\1/')"
 
-# [Service]
-# RuntimeDirectory=squeezelite
-# PIDFile=/var/run/squeezelite/squeezelite.pid
+	# [Service]
+	# RuntimeDirectory=squeezelite
+	# PIDFile=/var/run/squeezelite/squeezelite.pid
 
     if [ -f "$UNIT_FILE" ]; then
 
@@ -4126,6 +4361,7 @@ systemd_unit_file_runtimedir_set(){
 # systemd_unit_file_runtimedir_remove() Delete the RuntimeDirectory path
 ######################################################################################################
 systemd_unit_file_runtimedir_remove(){
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
 		UNIT="$INST_NAME"
 	else
@@ -4147,6 +4383,7 @@ systemd_unit_file_runtimedir_remove(){
 # systemd_unit_file_workingdir_set() Insert or update the WorkingDirectory path
 ######################################################################################################
 systemd_unit_file_workingdir_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
 		UNIT="$INST_NAME"
 	else
@@ -4158,8 +4395,8 @@ systemd_unit_file_workingdir_set(){
 	local L_WORKINGDIR="/var/run/${L_INST_NAME}"
 
 
-# [Service]
-# WorkingDirectory=/var/run/squeezelite
+	# [Service]
+	# WorkingDirectory=/var/run/squeezelite
 
     if [ -f "$UNIT_FILE" ]; then
 
@@ -4181,6 +4418,7 @@ systemd_unit_file_workingdir_set(){
 # systemd_unit_file_runtimedir_remove() Delete the RuntimeDirectory path
 ######################################################################################################
 systemd_unit_file_workingdir_remove(){
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
 		UNIT="$INST_NAME"
 	else
@@ -4201,6 +4439,7 @@ systemd_unit_file_workingdir_remove(){
 # systemd_unit_file_prestart_set() Insert or update the pre-start command
 ######################################################################################################
 systemd_unit_file_prestart_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	EXEC_ARGS="$@"
 
 	if [ $(echo "$EXEC_ARGS" | grep -c -E '^[-@:!+]') -lt 1 ]; then
@@ -4238,6 +4477,7 @@ systemd_unit_file_prestart_set(){
 # systemd_unit_file_fork_set() Insert or update the fork type command
 ######################################################################################################
 systemd_unit_file_fork_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	TYPE_ARGS="$@"
 
 	if [ -z "$TYPE_ARGS" ]; then
@@ -4266,6 +4506,7 @@ systemd_unit_file_fork_set(){
 # systemd_unit_file_restart_set() Insert or update the restart type
 ######################################################################################################
 systemd_unit_file_restart_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	RESTART_ARGS="$@"
 
 	if [ -z "$RESTART_ARGS" ]; then
@@ -4297,6 +4538,7 @@ systemd_unit_file_restart_set(){
 # systemd_unit_file_restartsecs_set() Change the restart seconds
 ######################################################################################################
 systemd_unit_file_restartsecs_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	RESTART_ARGS="$@"
 
 	if [ -z "$RESTART_ARGS" ]; then
@@ -4327,6 +4569,7 @@ systemd_unit_file_restartsecs_set(){
 # systemd_unit_file_bindsto_set() Insert or update the bindsto= value
 ######################################################################################################
 systemd_unit_file_bindsto_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	BINDSTO_ARGS="$@"
 
 	if [ -z "$BINDSTO_ARGS" ]; then
@@ -4358,6 +4601,7 @@ systemd_unit_file_bindsto_set(){
 # systemd_unit_file_wants_set() Insert or update the wants= value
 ######################################################################################################
 systemd_unit_file_wants_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	WANTS_ARGS="$@"
 
 	if [ -z "$WANTS_ARGS" ]; then
@@ -4390,6 +4634,7 @@ systemd_unit_file_wants_set(){
 # systemd_unit_file_start_before_set() Insert or update the Before= value
 ######################################################################################################
 systemd_unit_file_start_before_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	BEFORE_ARGS="$@"
 
 	if [ -z "$BEFORE_ARGS" ]; then
@@ -4421,6 +4666,7 @@ systemd_unit_file_start_before_set(){
 # systemd_unit_file_start_after_set() Set the start after value
 ######################################################################################################
 systemd_unit_file_start_after_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	START_AFTER="$@"
 
 	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
@@ -4446,6 +4692,7 @@ systemd_unit_file_start_after_set(){
 # systemd_unit_file_startas_set() Comment out or update the systemd startas uid & gid
 ######################################################################################################
 systemd_unit_file_startas_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
 		UNIT="$INST_NAME"
 	else
@@ -4470,6 +4717,7 @@ systemd_unit_file_startas_set(){
 # systemd_unit_file_priority_set() Comment out or update the systemd scheduling priority
 ######################################################################################################
 systemd_unit_file_priority_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
 		UNIT="$INST_NAME"
 	else
@@ -4512,6 +4760,7 @@ systemd_unit_file_priority_set(){
 # Requires systemd version >= 236
 ######################################################################################################
 systemd_unit_file_logto_set(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSTDLOGFILE="$1"
 	local LERRLOGFILE="$2"
 	local LLOG_TYPE=
@@ -4583,6 +4832,7 @@ systemd_unit_file_logto_set(){
 # systemd_unit_file_Update() Update the systemd unit file with new values
 ######################################################################################################
 systemd_unit_file_update(){
+	debug_echo "${FUNCNAME}( $@ )"
     systemd_unit_file_create $@
 }
 
@@ -4590,6 +4840,7 @@ systemd_unit_file_update(){
 # systemd_unit_file_exists() Return 0 if systemctl knows about the unit file(s), 1 if not.
 ######################################################################################################
 systemd_unit_file_exists(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	local LRET=
 	# If no wildcards and if no extension on the unit name, assume service
@@ -4611,6 +4862,7 @@ systemd_unit_file_exists(){
 # systemd_unit_file_list() List the unit files. Return 0 if unit file exists, 1 if not.
 ######################################################################################################
 systemd_unit_file_list(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	local LRET=
 
@@ -4640,6 +4892,7 @@ systemd_unit_file_list(){
 # systemd_unit_file_is_enabled() Return 0 if unit file is enabled, 1 if not enabled or nonexistant.
 ######################################################################################################
 systemd_unit_file_is_enabled(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	local LRET=
 	
@@ -4666,6 +4919,7 @@ systemd_unit_file_is_enabled(){
 # systemd_unit_file_enable() Enable the systemd service unit file
 ######################################################################################################
 systemd_unit_file_enable(){
+	debug_echo "${FUNCNAME}( $@ )"
 	systemctl daemon-reload >/dev/null 2>&1
 
 	local LUNIT="$1"
@@ -4700,6 +4954,7 @@ systemd_unit_file_enable(){
 }
 
 systemd_unit_file_start() {
+	debug_echo "${FUNCNAME}( $@ )"
 	systemctl daemon-reload >/dev/null 2>&1
 
 	local LUNIT="$1"
@@ -4715,16 +4970,17 @@ systemd_unit_file_start() {
 
 	LUNIT_FILE="/lib/systemd/system/${LUNIT}"
 	if [ -f "$LUNIT_FILE" ]; then
-		echo "Starting ${LUNIT_FILE} systemd unit file.."
+		error_echo "Starting ${LUNIT_FILE} systemd unit file.."
 
-		systemctl start "$LUNIT" >/dev/null 2>&1
-		systemctl -l --no-pager status "$LUNIT"
+		systemctl restart "$LUNIT" >/dev/null 2>&1
+		[ $DEBUG -gt 0 ] && systemctl -l --no-pager status "$LUNIT"
 	else
 		error_echo "Cannot find ${LUNIT_FILE} systemd unit file.."
 	fi
 }
 
 systemd_unit_file_stop() {
+	debug_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	local LUNIT_FILE=
 
@@ -4741,13 +4997,14 @@ systemd_unit_file_stop() {
 		error_echo "Stopping ${LUNIT_FILE} systemd unit file.."
 
 		systemctl stop "$LUNIT" >/dev/null 2>&1
-		systemctl -l --no-pager status "$LUNIT"
+		[ $DEBUG -gt 0 ] && systemctl -l --no-pager status "$LUNIT"
 	else
 		error_echo "Cannot find ${LUNIT_FILE} systemd unit file.."
 	fi
 }
 
 systemd_unit_file_status() {
+	debug_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	local LUNIT_FILE=
 
@@ -4772,6 +5029,7 @@ systemd_unit_file_status() {
 # systemd_unit_file_disable() Disable the systemd service unit file
 ######################################################################################################
 systemd_unit_file_disable(){
+	debug_echo "${FUNCNAME}( $@ )"
 	local LUNIT="$1"
 	
 	[ -z "$LUNIT" ] && LUNIT="$INST_NAME"
@@ -4794,6 +5052,7 @@ systemd_unit_file_disable(){
 # systemd_unit_file_remove() Remove the systemd service unit file
 ######################################################################################################
 systemd_unit_file_remove(){
+	debug_echo "${FUNCNAME}( $@ )"
 	if [ $(echo "$INST_NAME" | grep -c -e '.*\..*') -gt 0 ]; then
 		UNIT="$INST_NAME"
 	else
@@ -4998,12 +5257,12 @@ main_install_service(){
 }
 
 pass_get_root(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	echo " YXJnbGViYXJnbGUK " | openssl enc -base64 -d
 }
 
 pass_get_daadmin(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	echo " ZnVmZXJhbAo= " | openssl enc -base64 -d
 }
 
@@ -5011,7 +5270,7 @@ pass_get_daadmin(){
 # ping_wait()  See if an IP is reachable via ping. Returns 0 if the host is reachable
 ####################################################################################
 ping_wait(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	local LIP_ADDR="$1"
 	local LPING_COUNT=$2
@@ -5051,7 +5310,7 @@ ping_wait(){
 # is_scserver -- echos 1 if scserver is available on the local subnet
 ########################################################################
 is_scserver() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 
 	# If we are scserver, return 0 to force downloading zips, rather than fetching from ourselves!
 	if [ "$(hostname)" = "$SCSERVER" ]; then
@@ -5086,7 +5345,7 @@ ami_scserver(){
 #     the scriptdirpath via robocopy|rsync|scp
 ########################################################################
 script_dir_fetch(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSCRIPTDIR="$1"
 	local LTARGETDIR=
 	local LUSER=
@@ -5181,7 +5440,7 @@ script_dir_fetch(){
 # domain_check( URL ) -- echos 0 if domain is reachable, otherwise 1
 ########################################################################
 domain_check(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LURL="$1"
 	local LHOST=$(echo "$LURL" | sed -n -e 's#^.*://\([^/]\+\)/.*$#\1#p')
 	local LRET=
@@ -5202,7 +5461,7 @@ domain_check(){
 #     hegardtfoundation.org and unzips them to the scriptdirpath
 ########################################################################
 script_zip_download(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSCRIPTDIR="$1"
 	local LZIPFILE="$(basename "$LSCRIPTDIR").zip"
 	local LTARGETDIR="$(dirname "$LSCRIPTDIR")"
@@ -5296,7 +5555,7 @@ script_zip_download(){
 # args_clean( args ) -- removes line-feeds from an arg list
 ########################################################################
 args_clean() {
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LARGS="$*"
 	LARGS="$(echo "$LARGS" | sed ':a;N;$!ba;s/\n/ /g')"
 	echo "$LARGS"
@@ -5307,7 +5566,7 @@ args_clean() {
 #      scserver or downloading zipfiles from hegardtfoundation.org
 ########################################################################
 scripts_get(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LSCRIPTDIRS="$1"
 
 	# Replace any line-feeds with spaces..
@@ -5328,4 +5587,60 @@ scripts_get(){
 
 }
 
+
+systype_disp(){
+	[ "$(basename "$0")" = "instsrv_functions.sh" ] && echo "$(basename "$0") version: ${INCSCRIPT_VERSION}"; echo ' '
+
+	echo "M_ARCH           == ${M_ARCH}"
+	echo ' '
+
+	echo "IS_DEBIAN        == ${IS_DEBIAN}"
+	echo "IS_UBUNTU        == ${IS_UBUNTU}"
+	echo "UBUNTU_VER       == ${UBUNTU_VER}"
+	echo "IS_FOCAL         == ${IS_FOCAL}"
+	echo "IS_RHINO         == ${IS_RHINO}"
+	echo "IS_FEDORA        == ${IS_FEDORA}"
+	echo "IS_MAC           == ${IS_MAC}"
+	echo "IS_WSL           == ${IS_WSL}"
+	echo ' '
+
+	echo "IS_SYSTEMD       == ${IS_SYSTEMD}"
+	echo "IS_UPSTART       == ${IS_UPSTART}"
+	echo "IS_SYSV          == ${IS_SYSV}"
+	echo ' '
+
+	echo "USE_SYSTEMD      == ${USE_SYSTEMD}"
+	echo "SYSTEMD_VER      == ${SYSTEMD_VER}"
+	echo "USE_UPSTART      == ${USE_UPSTART}"
+	echo "USE_SYSV         == ${USE_SYSV}"
+	echo ' '
+
+	echo "USE_APT          == ${USE_APT}"
+	echo "USE_NALA         == ${USE_NALA}"
+	echo "USE_YUM          == ${USE_YUM}"
+	echo ' '
+
+	echo "IS_NETINTERFACES == ${IS_NETINTERFACES}"
+	echo "IS_DHCPCD        == ${IS_DHCPCD}"
+	echo "IS_NETWORKD      == ${IS_NETWORKD}"
+	echo "IS_NETWORKMNGR   == ${IS_NETWORKMNGR}"
+	echo ' '
+
+	echo "IS_NETPLAN       == ${IS_NETPLAN}"
+	echo ' '
+	
+	echo "USE_UFW          == ${USE_UFW}"
+	echo "USE_FIREWALLD    == ${USE_FIREWALLD}"
+	echo ' '
+	
+	echo "HAS_GUI          == ${HAS_GUI}"
+	echo "IS_GUI           == ${IS_GUI}"
+	echo "IS_TEXT          == ${IS_TEXT}"
+	echo ' '
+	echo ' '
+}
+
+if [ $DEBUG -gt 0 ]; then
+	systype_disp
+fi
 
