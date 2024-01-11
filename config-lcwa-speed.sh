@@ -4,7 +4,7 @@
 # Bash script for installing Andi Klein's Python LCWA PPPoE Speedtest Logger
 # as a service on systemd systems
 ######################################################################################################
-SCRIPT_VERSION=20220306.193601
+SCRIPT_VERSION=20231222.093423
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPTNAME=$(basename $0)
@@ -311,15 +311,15 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 		--)
 			;;
-		-h|--help)			# Displays this help
+		-h|--help)		# Displays this help
 			disp_help "$SCRIPT_DESC" 
 			exit 0
 			;;
-		-d|--debug)			# Shows debugging info
+		-d|--debug)		# Shows debugging info
 			((DEBUG++))
 			script_opts_set_all "$1"
 			;;
-		-q|--quiet)			# Supresses message output
+		-q|--quiet)		# Supresses message output
 			QUIET=1
 			script_opts_set_all "$1"
 			;;
@@ -327,22 +327,22 @@ while [ $# -gt 0 ]; do
 			((VERBOSE++))
 			script_opts_set_all "$1"
 			;;
-		-t|--test)			# Tests script logic without performing actions
+		-t|--test)		# Tests script logic without performing actions
 			((TEST++))
 			script_opts_set_all "$1"
 			;;
-		-f|--force)			# Invokes force overwrite conditions in install scripts
+		-f|--force)		# Invokes force overwrite conditions in install scripts
 			((FORCE+=1))
 			script_opts_set_all "$1"
 			;;
 		--no-pause)		# Inhibits banner pause
 			NO_PAUSE=1
 			;;
-		--hostname)
+		--hostname)		# Configure for a hostname other than actual
 			shift
 			PREP_OPTS="${PREP_OPTS} --hostname=${1}"
 			;;
-		--no-hostname)
+		--no-hostname)		# Don't configure for a hostname
 			PREP_OPTS="${PREP_OPTS} ${1}"
 			;;
 		--private)		# Configures the system firewall so that ports 22, 68 & 5201 are only open on  this subnet
@@ -354,19 +354,19 @@ while [ $# -gt 0 ]; do
 		--shallow)		# Clone only latest repo committs
 			REPO_OPTS="${REPO_OPTS} ${1}"
 			;;
-		--branch)					# Check-out a non-master branch of the primary repo
+		--branch)		# Check-out a non-master branch of the primary repo
 			shift
 			LCWA_REPO_BRANCH="$1"
 			;;
-		--supbranch)			# Check-out a non-master branch of the suplementary repo
+		--supbranch)		# Check-out a non-master branch of the suplementary repo
 			shift
 			LCWA_SUPREPO_BRANCH="$1"
 			;;
-		-r|--remove|--uninstall)
+		-r|--remove|--uninstall)	# Uninstall the service, repos, etc..
 			UNINSTALL=1
 			script_opts_set_all "--uninstall"
 			;;
-		-k|--keep)			# Retain repos, venv and data when uninstalling.
+		-k|--keep)		# Retain repos, venv and data when uninstalling.
 			UTIL_OPTS="${UTIL_OPTS} --keep"
 			INST_OPTS="${INST_OPTS} --keep"
 			;;
@@ -381,7 +381,7 @@ while [ $# -gt 0 ]; do
 			INST_SERVICE_NAME="$1"
 			LCWA_SERVICE="$(basename "$INST_SERVICE_NAME")"
 			;;
-		--pppoe)	# ='ACCOUNT:PASSWORD' Forces install of the PPPoE connect service. Ex: --pppoe=account_name:password
+		--pppoe)			# ='ACCOUNT:PASSWORD' Forces install of the PPPoE connect service. Ex: --pppoe=account_name:password
 			shift
 			PPPD_OPTS="${PPPD_OPTS} --pppoe=${1}"
 			LCWA_PPPOE_INSTALL=1

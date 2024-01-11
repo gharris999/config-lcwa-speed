@@ -2,7 +2,7 @@
 
 # Bash script to configure default NIC to a static IP address..
 
-SCRIPT_VERSION=20220904.082018
+SCRIPT_VERSION=20231026.075039
 
 # Todo: Support creating wifi APs via hostapd
 #		https://unix.stackexchange.com/questions/401533/making-hostapd-work-with-systemd-networkd-using-a-bridge
@@ -16,49 +16,60 @@ SCRIPT_VERSION=20220904.082018
 #	Look at: http://www.server-world.info/en/note?os=Fedora_19&p=initial_conf&f=3
 #   Look at: http://danielgibbs.co.uk/2013/01/fedora-18-set-static-ip-address/
 
+
+SCRIPT="$(realpath -s "$0")"
+SCRIPT_NAME="$(basename "$SCRIPT")"
+SCRIPT_DIR="$(dirname "$SCRIPT")"
+SCRIPT_DESC="Script to automate configuration of network interfaces for dhcp or static IPs."
+SCRIPT_EXTRA='[ iface | ipaddr ]'
+SCRIPT_LOG="/var/log/config/${SCRIPT_NAME%%.*}.log"
+
 ######################################################################################################
 # Include the generic service install functions
 ######################################################################################################
 
-REC_INCSCRIPT_VER=20201220
-INCLUDE_FILE="$(dirname $(readlink -f $0))/instsrv_functions.sh"
-[ ! -f "$INCLUDE_FILE" ] && INCLUDE_FILE='/usr/local/sbin/instsrv_functions.sh'
+SCRIPT_FUNC='instsrv_functions.sh'
+RQD_SCRIPT_FUNC_VER=20201220
 
-. "$INCLUDE_FILE"
-
-if [[ -z "$INCSCRIPT_VERSION" ]] || [[ "$INCSCRIPT_VERSION" < "$REC_INCSCRIPT_VER" ]]; then
-	echo "Error: ${INCLUDE_FILE} version is ${INCSCRIPT_VERSION}. Version ${REC_INCSCRIPT_VER} or newer is required."
+# Load the helper functions..
+source "${SCRIPT_DIR}/${SCRIPT_FUNC}" >/dev/null 2>&1
+if [ $? -gt 0 ]; then
+	source "$SCRIPT_FUNC" >/dev/null 2>&1
+	if [ $? -gt 0 ]; then
+		echo "${SCRIPT_NAME} error: Cannot load script helper functions in ${SCRIPT_FUNC}. Exiting."
+		exit 1
+	fi
 fi
 
-######################################################################################################
-# Vars
-######################################################################################################
+if [[ -z "$INCSCRIPT_VERSION" ]] || [[ "$INCSCRIPT_VERSION" < "$RQD_SCRIPT_FUNC_VER" ]]; then
+	# Don't error_exit -- at least try to continue with the utility functions as installed..
+	echo "Error: ${INCLUDE_FILE} version is ${INCSCRIPT_VERSION}. Version ${RQD_SCRIPT_FUNC_VER} or newer is required."
+fi
 
-SCRIPT_NAME="$(basename "$(readlink -f "$0")")"
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-SCRIPT_DESC="Script automate configuration of network interfaces for dhcp or static IPs."
-SCRIPT_LOG="/var/log/config/${SCRIPT_NAME%%.*}.log"
+
+DEBUG=0
+VERBOSE=0
+QUIET=0
+FORCE=0
+TEST=0
+LOG=0
 
 INST_LOGFILE="$SCRIPT_LOG"
 
-
-#~ IS_FEDORA="$(which firewall-cmd 2>/dev/null | wc -l)"
-#~ IS_NETPLAN="$(which netplan 2>/dev/null | wc -l | xargs)"
-
-DEBUG=0
-DEBUG_ARG=
-QUIET=0
-VERBOSE=0
-TEST=0
-FORCE=0
-LOG=0
+# Fix for systemd bug Bug #2036358 systemd wait-online now times out after jammy and lunar upgrade
+# See: https://bugs.launchpad.net/ubuntu/+source/systemd/+bug/2036358
+SYSTEMD_VER="$(systemd --version | grep 'systemd' | awk '{print $2}')"
+if [ $IS_UBUNTU -gt 0 ] && [ $SYSTEMD_VER -eq 249 ]; then
+	NETWORKD_TIMEOUT_FIX=1
+else
+	NETWORKD_TIMEOUT_FIX=0
+fi
 
 
 TESTPING=0
 NETCFG_ONLY=0
 NETPLAN_TRY=0
 UPDATE_YQ=0
-NO_PAUSE=0
 CONFIG_NETWORK_OPTS=
 
 # MULTI_NICS=1: Default to detecting primary & secondary NICs
@@ -467,8 +478,17 @@ yq_install(){
 
 	YQ_BIN_URL="$(cat index.html | grep -e "href=.*${YQ_BIN}" | sed -n -e 's#.*href="\(/.*\)" rel.*$#\1#p')"
 
+	# 2nd try..
 	if [ -z "$YQ_BIN_URL" ]; then
-		log_msg "Could not form yq download URL.."
+		#~ src="https://github.com/mikefarah/yq/releases/expanded_assets/3.4.1"
+		YQ_INDEX="$(grep -E 'https://.*assets/3\.4\.1' index.html | sed -n -e 's#^.*src="\(https.*assets/3\.4\.1\).*#\1#p')"
+		wget -q  --output-document="${TMPDIR}/index.html" "$YQ_INDEX"
+	fi
+	
+	YQ_BIN_URL="$(cat index.html | grep -e "href=.*${YQ_BIN}" | sed -n -e 's#.*href="\(/.*\)" rel.*$#\1#p')"
+
+	if [ -z "$YQ_BIN_URL" ]; then
+		error_echo "Could not form yq download URL.."
 		exit 1
 	fi
 	
@@ -595,6 +615,58 @@ dependencies_check(){
 	if [ $IS_NETPLAN -gt 0 ]; then
 		yq_check
 	fi
+
+}
+
+
+# Fix for systemd bug Bug #2036358 systemd wait-online now times out after jammy and lunar upgrade
+# See: https://bugs.launchpad.net/ubuntu/+source/systemd/+bug/2036358
+networkd_wait_online_fix(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LUNIT="${1:-'/lib/systemd/system/systemd-networkd-wait-online.service'}"
+	local LUNIT_NAME="$(basename "$LUNIT")"
+	local LBIN='/lib/systemd/systemd-networkd-wait-online'
+	local LRET=1
+	local LNETPLAN_CONF="$(netplan_cfg_find)"
+	local LOPTIONAL="$(grep -c 'optional: true' "$LNETPLAN_CONF")"
+
+	if [ $LOPTIONAL -lt 1 ] && [ $FORCE -lt 1 ]; then
+		log_msg "${FUNCNAME} error: No interfaces marked as optional in ${LNETPLAN_CONF}. Use --force to override."
+		return 1
+	fi
+
+	[ $QUIET -lt 1 ] && log_msg "Modifying ${LUNIT_NAME} for shorter timeout. (Fix for systemd Bug #2036358.)"
+
+	if [ ! -f "$LUNIT" ]; then
+		log_msg "${FUNCNAME} error: ${LUNIT} not found."
+		return 1
+	fi
+
+	if [ ! -f "$LBIN" ]; then
+		log_msg "${FUNCNAME} error: ${LBIN} not found."
+		return 1
+	fi
+
+	[ ! -f "${LUNIT}.org" ] && cp -p "$LUNIT" "${LUNIT}.org"
+
+	# ExecStart=/lib/systemd/systemd-networkd-wait-online
+	# ExecStart=/lib/systemd/systemd-networkd-wait-online --ignore=lo --timeout=10
+	
+	[ $TEST -lt 1 ] && sed -i 's#^ExecStart.*$#ExecStart=/lib/systemd/systemd-networkd-wait-online --ignore=lo --timeout=10#' "$LUNIT" || true
+	LRET=$?
+
+	if [ $LRET -gt 0 ]; then
+		log_msg "${FUNCNAME} error: could not update ${LUNIT}."
+	else
+		log_msg "${LUNIT_NAME} updated.."
+		[ $TEST -lt 1 ] && systemctl daemon-reload && systemctl reset-failed
+		if [ $VERBOSE -gt 0 ] || [ $DEBUG -gt 0 ]; then
+			cat "$LUNIT"  1>&2
+		fi
+		[ $LOG -gt 0 ] && cat "$LUNIT" >> "$SCRIPT_LOG"
+	fi
+
+	return $LRET
 
 }
 
@@ -1475,9 +1547,10 @@ netplan_cfg_write(){
 		log_msg '============================================================='
 		yamllint -f parsable "$LCONF_FILE"
 	fi
+
+	chmod 600 "$LCONF_FILE"
 	
 	((NUM_DEVICE++))
-
 
 	return $bRet
 
@@ -1583,6 +1656,8 @@ netplan_failsafe_write(){
 	$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.gateway4" "$LGATEWAY"
 	$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.nameservers.addresses[+]" "$LNAMESRV0"
 	$YQ w -i "$LCONF_FILE" "network.ethernets.${LDEV}.nameservers.addresses[+]" "$LNAMESRV1"
+
+	chmod 600 "$LCONF_FILE"
 
 	if [ $VERBOSE -gt 0 ]; then
 		log_msg "Netplan Failsafe File: ${LCONF_FILE}"
@@ -2115,6 +2190,9 @@ samba_fix(){
 
 		[ $QUIET -lt 1 ] && log_msg "Updating ${LCONF_FILE} with hosts allow = 127., ${LHOSTSALLOW}"
 		sed -i "s/^.*hosts allow = .*$/\thosts allow = 127., ${LHOSTSALLOW}/" "$LCONF_FILE"
+		
+		# Comment out the hosts allow line.  This allows access from any subnet..
+		[ $FIREWALL_PUBLIC -gt 0 ] && sed -i -e 's/^\s\+hosts allow = /;    hosts allow = /' "$$LCONF_FILE"
 
 		sleep 5
 
@@ -2209,31 +2287,27 @@ test,
 force,
 log,
 logfile:,
-no-pause,
 min,minimal,
-public,
-apps,fwapps,no-apps,no-fwapps,
-pri-only,
-primary-only,
+fix-timeout,
 netcfg-only,
 testping,
-try,netplan-try,
-netplan-no-try,
-update-yq,
-all,allnics,all-nics,
-wireless,
-iface:,nic:,
-primary:,iface0:,nic0:,
-secondary:,iface1:,nic1:,
+primary-only,
+primary:,iface0:,
+secondary:,iface1:,
 dhcp,
-address:,addr:,ip:,address0:,addr0:,ip0:,primary-ip:,
-address1:,addr1:,ip1:,secondary-ip:,
-ssid:,essid:,
+primary-ip:,addr0:,
+secondary-ip:,addr1:,
+wireless,
+ssid:,
 psk:,wpa-psk:,
-netatalk,
-NetworkManager,
+update-yq,
+netplan-try,
 no-firewall,
-firewall-iface:"
+firewall-iface:,
+apps,fwapps,no-apps,no-fwapps,
+public,
+netatalk,
+NetworkManager"
 
 # Remove line-feeds..
 LONGARGS="$(echo "$LONGARGS" | sed ':a;N;$!ba;s/\n//g')"
@@ -2242,7 +2316,7 @@ LONGARGS="$(echo "$LONGARGS" | sed ':a;N;$!ba;s/\n//g')"
 ARGS=$(getopt -o "$SHORTARGS" -l "$LONGARGS"  -n "$(basename $0)" -- "$@")
 
 if [ $? -gt 0 ]; then
-	disp_help "$SCRIPT_DESC"
+	disp_help "$SCRIPT_DESC" "$SCRIPT_EXTRA"
 	exit 1
 fi
 
@@ -2250,124 +2324,120 @@ eval set -- "$ARGS"
 
 while [ $# -gt 0 ]; do
 	case "$1" in
-		-h|--help)
-			disp_help "$SCRIPT_DESC"
-			#~ echo "${SCRIPT_NAME} [--primary-only] [--netcfg-only] [--iface0=net_device] [--ip0=ip_address|dhcp] [--iface1=net_device] [--ip1=ip_address|dhcp] [--ssid=wifi-ssid] [--wpa-psk=wifi-passkey] [--firewall-iface=devname]"
+		--)
+		   ;;
+		-h|--help)		# Display this help
+			disp_help "$SCRIPT_DESC" "$SCRIPT_EXTRA"
 			exit 0
 			;;
-		-d|--debug)
+		-d|--debug)		# Emits debugging info
 			((DEBUG++))
 			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --debug"
 			;;
-		-v|--verbose)
-			((VERBOSE++))
-			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --verbose"
-			;;
-		-q|--quiet)
+		-q|--quiet)		# Suspresses output
 			QUIET=1
 			VERBOSE=0
 			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --quiet"
 			;;
-		-f|--force)
+		-v|--verbose)		# Emits extra info
+			((VERBOSE++))
+			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --verbose"
+			;;
+		-f|--force)		# Force install of dependencies, wifi config with no SSID, etc.
 			FORCE=1
 			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --force"
 			;;
-		-t|--test)
+		-t|--test)		# Test script logic without performing actions
 			VERBOSE=1;
 			TEST=1
 			CONFIG_NETWORK_OPTS="${CONFIG_NETWORK_OPTS} --test"
 			;;
-		-l|--log)
+		-l|--log)		# Log script output
 			LOG=1
 			log_msg_dir_create "$SCRIPT_LOG"
 			;;
-		-L|--logfile)
+		-L|--logfile)		# Specify log file
 			LOG=1
 			shift
 			SCRIPT_LOG="$1"
 			log_msg_dir_create "$SCRIPT_LOG"
 			;;
-		--testping)
+		--fix-timeout)		# Fix for systemd-networkd-wait-online timeout bug
+			NETWORKD_TIMEOUT_FIX=1
+			;;
+		--testping)		# Exit script early if ping to gateway failes
 			TESTPING=1
 			;;
-		--try|netplan-try)
+		--netplan-try)		# Execute netplan with try option
 			NETPLAN_TRY=1
 			;;
-		--no-try|netplan-no-try)
-			NETPLAN_TRY=0
-			;;
-		--update-yq)
+		--update-yq)		# Force update of yq YAML parser
 			UPDATE_YQ=1
 			;;
-		-p|--pri-only|--primary-only)
+		-p|--primary-only)	# Configure primary nic only
 			MULTI_NICS=0
 			;;
-		--netcfg-only)
+		--netcfg-only)		# Configure nics only. Do not configure firewall or fixup services.
 			NETCFG_ONLY=1
 			;;
-		-a|--all|--allnics|--all-nics)
-			MULTI_NICS=1
-			;;
-		-w|--wireless)
+		-w|--wireless)		# Use wireless nic as primary adapter
 			PREFER_WIRELESS=1
 			;;
-		--iface|--nic|--primary|--iface0|--nic0)
+		--primary|--iface0)	# Primary nic device name
 			shift
 			NETDEV0="$1"
 			;;
-		--secondary|--iface1|--nic1)
+		--secondary|--iface1)	# Secondary nic device name
 			shift
 			NETDEV1="$1"
 			MULTI_NICS=1
 			;;
-		--dhcp)
+		--dhcp)			# Configure all nics to use dhcp
 			DHCP_ALL=1
 			IPADDR0='dhcp'
 			IPADDR1='dhcp'
 			;;
-		--address|--addr|--ip|--address0|--addr0|--ip0|--primary-ip)
+		--primary-ip|--addr0)	# IP address for the primary nic
 			shift
 			IPADDR0="$1"
 			;;
-		--address1|--addr1|--ip1|--secondary-ip)
+		--secondary-ip|--addr1)	# IP address for the secondary nic
 			shift
 			IPADDR1="$1"
 			;;
-		--ssid|--essid)
+		--ssid|--essid)		# ESSID for the wireless network to connect with
 			shift
 			ESSID="$1"
 			;;
-		--psk|--wpa-psk)
+		--psk|--wpa-psk)		# WPA-PSK passkey for the wireless network
 			shift
 			WPA_PSK="$1"
 			;;
 		--NetworkManager)	# Install NetworkManager and disable systemd-networkd
 			INST_NETWORKMNGR=1
 			;;
-		--netatalk)			# Fix interface settings for deprecated netatalk service
-			FIX_NETATALK=1
-			;;
-		--no-firewall)
+#		--netatalk)
+#			FIX_NETATALK=1
+#			;;
+		--no-firewall)		# Don't configure the firewall
 			NO_FIREWALL=1
 			;;
-		--min|--minimal)
+		--min|--minimal)		# Configure a minimal firewall (bootpc, ssh)
 			FIREWALL_MINIMAL=1
 			;;
-		--public)
+		--public)		# Configure firewall rule for all subnets
 			FIREWALL_PUBLIC=1
 			;;
-		--apps|--fwapps)
+		--apps|--fwapps)		# Use service application profiles for the firewall config
 			FIREWALL_USE_APPS=1
 			;;
-		--no-apps|--no-fwapps)
+		--no-apps|--no-fwapps)	# Don't use firewall service application profiles
 			FIREWALL_USE_APPS=0
 			;;
-		--firewall-iface)
+		--firewall-iface)	# Configure the firewall for a specific nic only
 			shift
 			FIREWALL_IFACE="$1"
 			;;
-		--)
-		   ;;
 		*)
 			# is this a valid interface name?
 			#~ is_iface "$1"
@@ -2653,6 +2723,11 @@ if [ $TESTPING -gt 0 ]; then
 	fi
 fi
 
+# Fix for systemd bug Bug #2036358 systemd wait-online now times out after jammy and lunar upgrade
+# See: https://bugs.launchpad.net/ubuntu/+source/systemd/+bug/2036358
+if [ $NETWORKD_TIMEOUT_FIX -gt 0 ]; then
+	networkd_wait_online_fix
+fi
 
 # Fix-up various services and firewall..
 if [ $NETCFG_ONLY -lt 1 ]; then

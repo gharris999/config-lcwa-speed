@@ -4,7 +4,7 @@
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
 ######################################################################################################
-SCRIPT_VERSION=20220302.084925
+SCRIPT_VERSION=20220921.085423
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -77,6 +77,8 @@ apt_install(){
 	local LPKG=
 	local LRET=1
 	
+	export DEBIAN_FRONTEND=noninteractive
+	
 	for LPKG in $LPKG_LIST
 	do
 	
@@ -89,7 +91,7 @@ apt_install(){
 		[ $QUIET -lt 1 ] && error_echo "Installing package ${LPKG}.."
 		for n in 1 2 3 4 5
 		do
-			apt-get -y -qq install "$LPKG" >/dev/null 2>&1
+			apt-get -y -qq -o Dpkg::Options::="--force-confold" install "$LPKG" >/dev/null 2>&1
 			
 			LRET=$?
 			
@@ -110,7 +112,7 @@ apt_install(){
 dnf_update(){
 	debug_echo "${FUNCNAME}( $@ )"
 	[ $QUIET -lt 1 ] && error_echo "Updating dnf package cacahe.."
-	[ $DEBUG -gt 0 ] && dnf -y update
+	[ $TEST -lt 1 ] && dnf -y update
 }
 
 dnf_install(){

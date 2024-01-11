@@ -4,7 +4,7 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 ######################################################################################################
-SCRIPT_VERSION=20220730.111146
+SCRIPT_VERSION=20231227.100815
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -67,6 +67,9 @@ NEEDSUSER=1
 NEEDSDATA=1
 KEEPCACHE=0
 NO_CLEAN=1
+
+LIST_PIP_LIBS=0
+UPDATE_PIP_LIBS=0
 
 ######################################################################################################
 # Incude our env vars declaration file..
@@ -190,6 +193,8 @@ apt_install(){
 	
 	[ $VERBOSE -gt 0 ] && error_echo "Packages selected for install: ${LPKG_LIST}"
 	
+	export DEBIAN_FRONTEND=noninteractive
+	
 	for LPKG in $LPKG_LIST
 	do
 	
@@ -202,7 +207,7 @@ apt_install(){
 		[ $QUIET -lt 1 ] && error_echo "Installing package ${LPKG}.."
 		for n in 1 2 3 4 5
 		do
-			apt-get -y -qq install "$LPKG"
+			[ $TEST -lt 1 ] && apt-get -y -qq -o Dpkg::Options::="--force-confold" install "$LPKG"
 			
 			LRET=$?
 			
@@ -226,6 +231,8 @@ apt_install(){
 apt_uninstall(){
 	debug_echo "${FUNCNAME}( $@ )"
 
+	export DEBIAN_FRONTEND=noninteractive
+
 	apt-get purge -y "$@" >/dev/null 2>&1
 	apt autoremove >/dev/null 2>&1
 }
@@ -233,7 +240,7 @@ apt_uninstall(){
 dnf_update(){
 	debug_echo "${FUNCNAME}( $@ )"
 	[ $QUIET -lt 1 ] && error_echo "Updating dnf package cacahe.."
-	[ $DEBUG -gt 0 ] && apt-update || dnf -y update
+	[ $TEST -lt 1 ] && dnf -y update
 }
 
 dnf_install(){
@@ -250,7 +257,7 @@ dnf_install(){
 		fi
 	
 		[ $QUIET -lt 1 ] && error_echo "Installing package ${LPKG}.."
-		dnf install -y --allowerasing "$LPKG"
+		[ $TEST -lt 1 ] && dnf install -y --allowerasing "$LPKG"
 		LRET=$?
 	
 		if [ $LRET -gt 0 ]; then
@@ -266,10 +273,64 @@ dnf_uninstall(){
 	debug_echo "${FUNCNAME}( $@ )"
 }
 
+pip_libs_list(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LLCWA_INST_DIR="${1:-${LCWA_INSTDIR}}"
+	local LUSER="${2:-${LCWA_USER}}"
+	local LLCWA_HOMEDIR="${3:-${LCWA_HOMEDIR}}"
+	local LUPDATABLE_ONLY="${4:-0}"
 
+	local LGROUP="$(id -gn "$LUSER")"
+	local LINST_PIP3="${LLCWA_INST_DIR}/bin/pip3"
+	local LCACHE_DIR="${LLCWA_HOMEDIR}/.cache/pip}"
+	local LPIP3_DIR=
+	local LCUR_DIR=
+
+
+	if [ ! -x "$LINST_PIP3" ]; then
+		error_echo "Error: venv pip3 ${LINST_PIP3} not found."
+		debug_pause "${LINENO} -- ${FUNCNAME}() done."
+		return 1
+	fi
+
+	if [ ! -d "$LCACHE_DIR" ]; then
+		error_echo "Creating pip cache directory ${LCACHE_DIR}.."
+		[ $TEST -lt 1 ] && mkdir -p "$LCACHE_DIR"
+		[ $TEST -lt 1 ] && chown --silent -R "${LUSER}:${LGROUP}" "$LCACHE_DIR"
+	fi
+
+	LPIP3_DIR="$(dirname "${LINST_PIP3}")"
+	LCUR_DIR="$(pwd)"
+
+	cd "$LPIP3_DIR"
+
+	error_echo '========================================================'
+	error_echo 'Out of date pip3 packages in this venv:'
+	error_echo ' '
+	sudo -H -u "$LUSER" "$LINST_PIP3" list --local --outdated --default-timeout=60 --cache-dir "$LCACHE_DIR"
+	if [ $? -gt 0 ]; then
+		error_echo ' '
+		error_echo "Pip3 Timeout Error: could not fetch list up updatable pip3 packages."
+	fi
+	error_echo ' '
+	if [ $LUPDATABLE_ONLY -lt 1 ]; then
+		error_echo 'Up to date pip3 packages in this venv:'
+		error_echo ' '
+		sudo -H -u "$LUSER" "$LINST_PIP3" list --local --uptodate --default-timeout=60 --cache-dir "$LCACHE_DIR"
+		if [ $? -gt 0 ]; then
+			error_echo ' '
+			error_echo "Pip3 Timeout Error: could not fetch list up updatable pip3 packages."
+		fi
+		error_echo ' '
+	fi
+
+	cd "$LCUR_DIR"
+
+	[ $TEST -lt 1 ] && debug_echo "${LINENO} -- ${FUNCNAME}() done."
+}
 
 ############################################################################
-# pip_libs_install ( pip3_path, username, cache_dir, library_list) -- Installs 
+# pip_libs_install ( pip3_path, username, cache_dir, library_list) -- Installs or updates
 #              python libraries via pip3 for user 'username'.  Works for
 #			   venv virtual environment installs.  Requirement:
 #              For some libraries, username *must* have a /home/username
@@ -283,9 +344,9 @@ pip_libs_install(){
 	local LCACHE_DIR="${3:-/home/${LUSER}/.cache/pip}"
 	local LLIB_LIST="$4"
 	local LGROUP="$(id -gn "$LUSER")"
-	local LCUR_HOME="$HOME"
 	local LFAKE_HOME="/home/${INST_USER}"
 	local LLIB=
+	local LACTION=
 	
 	if ! ( is_user "$LUSER" ); then
 		error_echo "Error: ${LUSER} -- no such user."
@@ -295,37 +356,46 @@ pip_libs_install(){
 	# Even with venv, pip seems to require a user have a /home/user directory for ..
 	if [ ! -d "$LFAKE_HOME" ]; then
 		error_echo "Creating fake home ${LFAKE_HOME} for pip3 libraries install.."
-		mkdir -p "$LFAKE_HOME"
-		chown --silent -R "${INST_USER}:${INST_GROUP}" "$LFAKE_HOME"
+		[ $TEST -lt 1 ] && mkdir -p "$LFAKE_HOME"
+		[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LFAKE_HOME"
 		HOME="$LFAKE_HOME"
 	else
 		LFAKE_HOME=
 	fi
-
 
 	# Have pip3 install one library at a time.  Much better odds of success this way.
 	for LLIB in $LLIB_LIST
 	do
 	
 		# Check to see if the library is already installed
-		if [ $FORCE -lt 1 ]; then
-			if "${LCWA_INSTDIR}/bin/python3" -c "import ${LLIB}" >/dev/null 2>&1; then
+		if "${LCWA_INSTDIR}/bin/python3" -c "import ${LLIB}" >/dev/null 2>&1; then
+			if [ $UPDATE_PIP_LIBS -gt 0 ]; then
+				LACTION='updating'
+			else
+				LACTION='installing'
 				[ $QUIET -lt 1 ] && error_echo "Library ${LLIB} already installed.."
-				continue
+				[ $FORCE -lt 1 ] && continue
 			fi
 		fi
 	
 		for n in 1 2 3 4 5
 		do
-			error_echo "Pip installing ${LLIB}.."
-			
 			# Allow 20 minutes for any download before timing out and retrying.  Useful for
 			# large libraries and slow internet connections.
-			sudo -H -u "$LUSER" "$LPIP3" install -qq --default-timeout=1200 --cache-dir "$LCACHE_DIR" --force-reinstall "$LLIB"
-			LRET=$?
+			if [ $UPDATE_PIP_LIBS -gt 0 ]; then
+				[ $QUIET -lt 1 ] && error_echo "Checking library ${LLIB}.."
+				[ $TEST -lt 1 ] && sudo -H -u "$LUSER" "$LPIP3" install --upgrade --default-timeout=1200 "--cache-dir=${LCACHE_DIR}" "$LLIB"
+				LRET=$?
+				[ $TEST -gt 0 ] && LRET=0
+			else
+				[ $QUIET -lt 1 ] && error_echo "Pip ${LACTION} ${LLIB}.."
+				[ $TEST -lt 1 ] && sudo -H -u "$LUSER" "$LPIP3" install -qq --default-timeout=1200 "--cache-dir=${LCACHE_DIR}" --force-reinstall "$LLIB"
+				LRET=$?
+				[ $TEST -gt 0 ] && LRET=0
+			fi
 
 			if [ $LRET -gt 0 ]; then
-				error_echo "Error installing python3 library ${LLIB}...waiting 10 seconds to try again.."
+				error_echo "Error ${LACTION} python3 library ${LLIB}...waiting 10 seconds to try again.."
 				debug_pause "${LINENO} -- ${FUNCNAME}() Problem with ${LLIB}."
 				sleep 10
 			else
@@ -336,12 +406,12 @@ pip_libs_install(){
 		done
 	done
 	
-	HOME="$LCUR_HOME"
+	HOME="$CUR_HOME"
 
 	# Remove the fake home directory. The important cache still exists at 
 	[ ! -z "$LFAKE_HOME" ] && [ -d "$LFAKE_HOME" ] && [ $KEEPCACHE -lt 1 ] && rm -Rf "$LFAKE_HOME"
 
-	debug_echo "${LINENO} -- ${FUNCNAME}() done."
+	[ $TEST -lt 1 ] && debug_echo "${LINENO} -- ${FUNCNAME}() done."
 	return $LRET
 }
 
@@ -590,135 +660,135 @@ python_libs_install(){
 	local LPKG_LIST=
 	local LPKG=
 	local LFAKE_HOME=
+	local LCUR_HOME="$HOME"
 	
 	local CURCD="$(pwd)"
 	cd /tmp
 
 	# Install system python3 development packages..
 	
-	if [ $TEST -lt 1 ]; then
-		error_echo "Installing python3 development dackages.."
+	error_echo "Installing python3 development dackages.."
 
-		if [ $USE_APT -gt 0 ]; then
+	if [ $USE_APT -gt 0 ]; then
+	
+		[ $FORCE -gt 1 ] && apt_update
+	
+		# Figure out which version of python3-venv to install..
+		local LVER="$(python3 --version | sed -n -e 's/^.* \([[:digit:]]\{1\}\.[[:digit:]]\{1\}\).*$/\1/p')"
+		local LPYTHON_VENV="$(apt-cache search "python${LVER}.*-venv" | awk '{ print $1 }')"
 		
-			[ $FORCE -gt 1 ] && apt_update
+		LPKG_LIST=" \
+			python3 \
+			python3-dev \
+			python3-pip \
+			${LPYTHON_VENV} \
+			python3-tk \
+			python3-gi-cairo \
+			libfreetype6-dev \
+			libpng-dev \
+			pkg-config"
+			
+		LPKG_LIST="$(echo $LPKG_LIST | xargs)"
+
+		[ $QUIET -gt 0 ] && error_echo "Checking package list.."
+
+		LPKG_LIST="$(pkg_check "$LPKG_LIST")"
+
+		apt_install "$LPKG_LIST"
+		LRET=$?
 		
-			# Figure out which version of python3-venv to install..
-			local LVER="$(python3 --version | sed -n -e 's/^.* \([[:digit:]]\{1\}\.[[:digit:]]\{1\}\).*$/\1/p')"
-			local LPYTHON_VENV="$(apt-cache search "python${LVER}.*-venv" | awk '{ print $1 }')"
-			
-			LPKG_LIST=" \
-				python3 \
-				python3-dev \
-				python3-pip \
-				${LPYTHON_VENV} \
-				python3-tk \
-				python3-gi-cairo \
-				libfreetype6-dev \
-				libpng-dev \
-				pkg-config"
-				
-			LPKG_LIST="$(echo $LPKG_LIST | xargs)"
+	elif [ $USE_YUM -gt 0 ]; then
 
-			[ $QUIET -gt 0 ] && error_echo "Checking package list.."
+		LPKG_LIST=" \
+			python3 \
+			python3-devel \
+			python3-pip \
+			python3-tkinter\
+			python3-gobject \
+			gtk3 \
+			freetype-devel \
+			libpng-devel \
+			pkgconf-pkg-config"
 
-			LPKG_LIST="$(pkg_check "$LPKG_LIST")"
+		LPKG_LIST="$(echo $LPKG_LIST | xargs)"
+		LPKG_LIST="$(pkg_check "$LPKG_LIST")"
+		
+		dnf_update
 
-			apt_install "$LPKG_LIST"
-			LRET=$?
-			
-		elif [ $USE_YUM -gt 0 ]; then
-
-			LPKG_LIST=" \
-				python3 \
-				python3-devel \
-				python3-pip \
-				python3-tkinter\
-				python3-gobject \
-				gtk3 \
-				freetype-devel \
-				libpng-devel \
-				pkgconf-pkg-config"
-
-			LPKG_LIST="$(echo $LPKG_LIST | xargs)"
-			LPKG_LIST="$(pkg_check "$LPKG_LIST")"
-			
-			dnf_update
-
-			dnf_install $LPKG_LIST
-			LRET=$?
-		fi
-		#~ debug_pause "${LINENO} -- ${FUNCNAME}() python3 development dackages done."
+		dnf_install $LPKG_LIST
+		LRET=$?
 	fi
+	#~ debug_pause "${LINENO} -- ${FUNCNAME}() python3 development dackages done."
 
 	# Install the python libraries needed for the speedtest code..
 
-	if [ $TEST -lt 1 ]; then
 	
-		# Point HOME towards our data directory for the python installs
-		HOME="$LLCWA_HOMEDIR"
+	# Point HOME towards our data directory for the python installs
+	LCUR_HOME="$HOME"
+	HOME="$LLCWA_HOMEDIR"
 
-		error_echo "========================================================================================="
-		error_echo "Installing venv python virtual environment to ${LLCWA_INST_DIR}, caching to ${LLCWA_HOMEDIR}/.cache/pip"
-		error_echo "  HOME is set to ${HOME}"
-		sudo -H -u "$INST_USER" python3 -m venv "$LLCWA_INST_DIR"
-		
-		INST_PYTHON="${LLCWA_INST_DIR}/bin/python3"
-		INST_PIP3="${LLCWA_INST_DIR}/bin/pip3"
-		
-		if [ ! -x "$INST_PYTHON" ]; then
-			error_echo "Error: venv python3 ${INST_PYTHON} not found."
-			debug_pause "${LINENO} -- ${FUNCNAME}() done."
-			return 1
-		fi
-
-		if [ ! -x "$INST_PIP3" ]; then
-			error_echo "Error: venv pip3 ${INST_PIP3} not found."
-			debug_pause "${LINENO} -- ${FUNCNAME}() done."
-			return 1
-		fi
-		
-		debug_echo "${LINENO} -- ${FUNCNAME}() venv installation done."
-		
-		# Update pip3
-		error_echo "Updating ${INST_PIP3}.."
-		sudo -H -u "$INST_USER" "$INST_PIP3" install -qq --default-timeout=1200 --cache-dir "${LLCWA_HOMEDIR}/.cache/pip" --upgrade pip
-
-		debug_echo "${LINENO} -- ${FUNCNAME}() Update pip done."
-		
-		# Even with venv, pip seems to require a user have a /home/user directory for ..
-		LFAKE_HOME="/home/${INST_USER}"
-		error_echo "Creating fake home ${LFAKE_HOME} for python libraries install.."
-		mkdir -p "$LFAKE_HOME"
-		chown --silent -R "${INST_USER}:${INST_GROUP}" "$LFAKE_HOME"
-		HOME="$LFAKE_HOME"
-		
-		error_echo "========================================================================================="
-		error_echo "Installing python libraries to virtual environment ${LLCWA_INST_DIR}, caching to ${LLCWA_HOMEDIR}/.cache/pip"
-		error_echo "  HOME is set to ${HOME}"
-		
-		local LPYTHON_LIBS=" \
-			testresources \
-			backports.functools_lru_cache \
-			pydig \
-			iperf3 \
-			ntplib \
-			tcp_latency \
-			dropbox \
-			cairocffi \
-			matplotlib \
-			pandas"
-
-		LPYTHON_LIBS="$(echo "$LPYTHON_LIBS" | xargs)"
-		
-		pip_libs_install "$INST_PIP3" "$INST_USER" "${LLCWA_HOMEDIR}/.cache/pip" "$LPYTHON_LIBS"
-		
-		# 20210505: Make the /var/lib/lcwa-speed/.config/matplotlib/ directory writeable..
-		mkdir -p "${LLCWA_HOMEDIR}/.config/matplotlib"
-		chown --silent -R "${INST_USER}:${INST_GROUP}" "$LLCWA_HOMEDIR"
-		error_echo "Setting permissions on ${LLCWA_HOMEDIR}/.config/matplotlib/"
-		chmod 777 "${LLCWA_HOMEDIR}/.config/matplotlib/"
+	error_echo "========================================================================================="
+	error_echo "Installing venv python virtual environment to ${LLCWA_INST_DIR}, caching to ${LLCWA_HOMEDIR}/.cache/pip"
+	error_echo "  HOME is set to ${HOME}"
+	[ $TEST -lt 1 ] && sudo -H -u "$INST_USER" python3 -m venv "$LLCWA_INST_DIR"
+	
+	INST_PYTHON="${LLCWA_INST_DIR}/bin/python3"
+	INST_PIP3="${LLCWA_INST_DIR}/bin/pip3"
+	
+	if [ ! -x "$INST_PYTHON" ]; then
+		error_echo "Error: venv python3 ${INST_PYTHON} not found."
+		debug_pause "${LINENO} -- ${FUNCNAME}() done."
+		HOME="$LCUR_HOME"
+		return 1
 	fi
+
+	if [ ! -x "$INST_PIP3" ]; then
+		error_echo "Error: venv pip3 ${INST_PIP3} not found."
+		debug_pause "${LINENO} -- ${FUNCNAME}() done."
+		HOME="$LCUR_HOME"
+		return 1
+	fi
+	
+	debug_echo "${LINENO} -- ${FUNCNAME}() venv installation done."
+	
+	# Update pip3
+	error_echo "Updating ${INST_PIP3}.."
+	[ $TEST -lt 1 ] && sudo -H -u "$INST_USER" "$INST_PIP3" install -qq --default-timeout=1200 --cache-dir "${LLCWA_HOMEDIR}/.cache/pip" --upgrade pip
+
+	debug_echo "${LINENO} -- ${FUNCNAME}() Update pip done."
+	
+	# Even with venv, pip seems to require a user have a /home/user directory for ..
+	LFAKE_HOME="/home/${INST_USER}"
+	error_echo "Creating fake home ${LFAKE_HOME} for python libraries install.."
+	[ $TEST -lt 1 ] && mkdir -p "$LFAKE_HOME"
+	[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LFAKE_HOME"
+	HOME="$LFAKE_HOME"
+	
+	error_echo "========================================================================================="
+	error_echo "Installing python libraries to virtual environment ${LLCWA_INST_DIR}, caching to ${LLCWA_HOMEDIR}/.cache/pip"
+	error_echo "  HOME is set to ${HOME}"
+	
+	local LPYTHON_LIBS=" \
+		testresources \
+		backports.functools_lru_cache \
+		pydig \
+		iperf3 \
+		ntplib \
+		tcp_latency \
+		dropbox \
+		cairocffi \
+		matplotlib \
+		pandas"
+
+	LPYTHON_LIBS="$(echo "$LPYTHON_LIBS" | xargs)"
+	
+	pip_libs_install "$INST_PIP3" "$INST_USER" "${LLCWA_HOMEDIR}/.cache/pip" "$LPYTHON_LIBS"
+	
+	# 20210505: Make the /var/lib/lcwa-speed/.config/matplotlib/ directory writeable..
+	[ $TEST -lt 1 ] && mkdir -p "${LLCWA_HOMEDIR}/.config/matplotlib"
+	[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LLCWA_HOMEDIR"
+	error_echo "Setting permissions on ${LLCWA_HOMEDIR}/.config/matplotlib/"
+	[ $TEST -lt 1 ] && chmod 777 "${LLCWA_HOMEDIR}/.config/matplotlib/"
 
 	cd "$CURCD"
 	
@@ -729,6 +799,89 @@ python_libs_install(){
 
 	debug_pause "${LINENO} -- ${FUNCNAME}() done."
 }
+
+############################################################################
+# python_libs_update() -- Installs python library dependencies
+############################################################################
+python_libs_update(){
+	debug_echo "${FUNCNAME}( $@ )"
+	
+	local LLCWA_INST_DIR="${1:-${LCWA_INSTDIR}}"
+	local LLCWA_HOMEDIR="${2:-${LCWA_HOMEDIR}}"
+	local LPKG_LIST=
+	local LPKG=
+	local LFAKE_HOME=
+	
+	local CURCD="$(pwd)"
+
+	INST_PYTHON="${LLCWA_INST_DIR}/bin/python3"
+	INST_PIP3="${LLCWA_INST_DIR}/bin/pip3"
+
+	# Point HOME towards our data directory for the python installs
+	HOME="$LLCWA_HOMEDIR"
+
+	error_echo "========================================================================================="
+	error_echo "Checking venv python virtual environment in ${LLCWA_INST_DIR}"
+	
+	INST_PYTHON="${LLCWA_INST_DIR}/bin/python3"
+	INST_PIP3="${LLCWA_INST_DIR}/bin/pip3"
+	
+	if [ ! -x "$INST_PYTHON" ]; then
+		error_echo "Error: venv python3 ${INST_PYTHON} not found."
+		debug_pause "${LINENO} -- ${FUNCNAME}() done."
+		return 1
+	fi
+
+	if [ ! -x "$INST_PIP3" ]; then
+		error_echo "Error: venv pip3 ${INST_PIP3} not found."
+		debug_pause "${LINENO} -- ${FUNCNAME}() done."
+		return 1
+	fi
+
+	debug_echo "${LINENO} -- ${FUNCNAME}() venv check done."
+
+	# Update pip3
+	error_echo "Updating ${INST_PIP3}.."
+	[ $TEST -lt 1 ] && sudo -H -u "$INST_USER" "$INST_PIP3" install --default-timeout=1200 --cache-dir "${LLCWA_HOMEDIR}/.cache/pip" --upgrade pip
+	[ $TEST -lt 1 ] && sudo -H -u "$INST_USER" "$INST_PIP3" install --upgrade --default-timeout=1200 --cache-dir "${LLCWA_HOMEDIR}/.cache/pip" 'setuptools'
+
+	debug_echo "${LINENO} -- ${FUNCNAME}() Update pip done."
+	
+	# Even with venv, pip seems to require a user have a /home/user directory for ..
+	LFAKE_HOME="/home/${INST_USER}"
+	error_echo "Creating fake home ${LFAKE_HOME} for python libraries install.."
+	[ $TEST -lt 1 ] && mkdir -p "$LFAKE_HOME"
+	[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LFAKE_HOME"
+	HOME="$LFAKE_HOME"
+	
+	error_echo "========================================================================================="
+	error_echo "Updating python libraries in virtual environment ${LLCWA_INST_DIR}, caching to ${LLCWA_HOMEDIR}/.cache/pip"
+	error_echo "  HOME is set to ${HOME}"
+	
+	local LPYTHON_LIBS=" \
+		testresources \
+		backports.functools_lru_cache \
+		pydig \
+		iperf3 \
+		ntplib \
+		tcp_latency \
+		dropbox \
+		cairocffi \
+		matplotlib \
+		pandas"
+
+	LPYTHON_LIBS="$(echo "$LPYTHON_LIBS" | xargs)"
+	
+	pip_libs_install "$INST_PIP3" "$INST_USER" "${LLCWA_HOMEDIR}/.cache/pip" "$LPYTHON_LIBS"
+	
+	# 20210505: Make the /var/lib/lcwa-speed/.config/matplotlib/ directory writeable..
+	[ $TEST -lt 1 ] && mkdir -p "${LLCWA_HOMEDIR}/.config/matplotlib"
+	[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LLCWA_HOMEDIR"
+	error_echo "Setting permissions on ${LLCWA_HOMEDIR}/.config/matplotlib/"
+	[ $TEST -lt 1 ] && chmod 777 "${LLCWA_HOMEDIR}/.config/matplotlib/"
+
+}
+
 
 python_libs_remove(){
 	debug_echo "${FUNCNAME}( $@ )"
@@ -789,7 +942,7 @@ is_root
 env_vars_zero $(env_vars_name)
 
 
-SHORTARGS='hdqvftk'
+SHORTARGS='hdqvftLUk'
 
 LONGARGS="
 help,
@@ -798,6 +951,8 @@ quiet,
 verbose,
 test,
 force,
+list-pip,
+update-pip,
 keep-cache,
 clean,
 inst-name:,
@@ -822,45 +977,51 @@ do
 	case "$1" in
 		--)
 			;;
-		-h|--help)			# Displays this help
+		-h|--help)	# Displays this help
 			disp_help "$SCRIPT_DESC"
 			exit 0
 			;;
-		-d|--debug)			# Shows debugging info.
+		-d|--debug)	# Shows debugging info.
 			((DEBUG+=1))
 			;;
-		-q|--quiet)			# Supresses message output.
+		-q|--quiet)	# Supresses message output.
 			QUIET=1
 			VERBOSE=0
 			;;
-		-v|--verbose)		# Increase message output.
+		-v|--verbose)	# Increase message output.
 			QUIET=0
 			((VERBOSE+=1))
 			;;
-		-f|--force)			# Forces reinstall of jq commandline JSON processor
+		-f|--force)	# Forces reinstall of jq commandline JSON processor
 			((FORCE+=1))
 			;;
-		-t|--test)			# Tests script logic without performing actions.
+		-t|--test)	# Tests script logic without performing actions.
 			TEST=1
 			;;
-		-c|--clean)			# Cleans and deletes previous install before reinstalling.
+		-c|--clean)	# Cleans and deletes previous install before reinstalling.
 			NO_CLEAN=0
 			;;
-		-k|--keep-cache)			# Retains local pip3 http cache.
+		-L|--list-pip)	# Lists the installed libraries
+			LIST_PIP_LIBS=1
+			;;
+		-U|--update-pip)	# Just updates the currently installed pip libraries
+			UPDATE_PIP_LIBS=1
+			;;
+		-k|--keep-cache)	# Retains local pip3 http cache.
 			KEEPCACHE=1
 			;;
-		--inst-name)		# =NAME -- Instance name that defines the install location: /usr/local/share/NAME and user account name -- defaults to lcwa-speed.
+		--inst-name)	# =NAME -- Instance name that defines the install location: /usr/local/share/NAME and user account name -- defaults to lcwa-speed.
 			shift
 			INST_INSTANCE_NAME="$1"
 			LCWA_INSTANCE="$1"
 			INST_NAME="$LCWA_INSTANCE"
 			;;
-		--service-name)			# =NAME -- Defines the name of the service: /lib/systemd/system/NAME.service -- defaults to lcwa-speed.
+		--service-name)	# =NAME -- Defines the name of the service: /lib/systemd/system/NAME.service -- defaults to lcwa-speed.
 			shift
 			INST_SERVICE_NAME="$1"
 			LCWA_SERVICE="$(basename "$INST_SERVICE_NAME")"
 			;;
-		--env-file)			# =NAME -- Read a specific env file to get the locations for the install.
+		--env-file)	# =NAME -- Read a specific env file to get the locations for the install.
 			shift
 			LCWA_ENVFILE="$1"
 			[ -f "$LCWA_ENVFILE" ] && LCWA_ENVFILE="$(readlink -f "$LCWA_ENVFILE")"
@@ -908,11 +1069,13 @@ if [ $DEBUG -gt 0 ]; then
 	error_echo "            DEBUG == ${DEBUG}"
 	error_echo "            FORCE == ${FORCE}"
 	error_echo "             TEST == ${TEST}"
+	error_echo "    LIST_PIP_LIBS == ${LIST_PIP_LIBS}"
+	error_echo "  UPDATE_PIP_LIBS == ${UPDATE_PIP_LIBS}"
 	error_echo "        KEEPCACHE == ${KEEPCACHE}"
 	error_echo "         NO_CLEAN == ${NO_CLEAN}"
 	error_echo "=========================================="
 	error_echo "        INST_NAME == ${INST_NAME}"
-	error_echo "    INST_INSTANCE_NAME == ${INST_INSTANCE_NAME}"
+	error_echo "INST_INSTANCE_NAME == ${INST_INSTANCE_NAME}"
 	error_echo "INST_SERVICE_NAME == ${INST_SERVICE_NAME}"
 	error_echo "=========================================="
 	error_echo "     LCWA_ENVFILE == ${LCWA_ENVFILE}"
@@ -933,6 +1096,18 @@ if [ $DEBUG -gt 0 ]; then
 	
 	debug_pause "Press any key to continue.."
 	
+fi
+
+if [ $LIST_PIP_LIBS -gt 0 ]; then
+	pip_libs_list "$LCWA_INSTDIR" "$LCWA_USER" "$LCWA_HOMEDIR" 0
+	exit
+fi
+
+if [ $UPDATE_PIP_LIBS -gt 0 ]; then
+	pip_libs_list "$LCWA_INSTDIR" "$LCWA_USER" "$LCWA_HOMEDIR" 1
+	python_libs_update "$LCWA_INSTDIR" "$LCWA_HOMEDIR"
+	pip_libs_list "$LCWA_INSTDIR" "$LCWA_USER" "$LCWA_HOMEDIR" 1
+	exit
 fi
 
 # Start with a fresh slate..

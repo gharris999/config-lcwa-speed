@@ -2,16 +2,21 @@
 
 ######################################################################################################
 # Bash include script for generically installing services on upstart, systemd & sysv systems
-# 20220818 -- Gordon Harris
+# 20230203 -- Gordon Harris
 ######################################################################################################
-INCSCRIPT_VERSION=20220915.001851
+##INCSCRIPT_VERSION=20240111.103430
+INCSCRIPT_VERSION=20240111.103430
+
 SCRIPT_NAME=$(basename -- "$0")
 
-# Get the underlying user...i.e. who called sudo..
-UUSER="$(logname 2>/dev/null)"
+# Get the underlying user...i.e. who called sudo...modified for WSL2
+UUSER="$SUDO_USER"
+[ -z "$UUSER" ] && UUSER="$(logname 2>/dev/null)"
 [ -z "$UUSER" ] && UUSER="$(who am i | awk '{print $1}')"
 [ -z "$UUSER" ] && [ "$(tty)" != 'not a tty' ] && UUSER="$(ls -l $(tty) | awk '{print $3}')"
 [ -z "$UUSER" ] && UUSER="$(awk -F':' '{ if($7 ~ /\/bin\/bash/ && $1 !~ /root/) {print $1; exit} };0' /etc/passwd)"
+[ -z "$UUSER" ] && UUSER="$(grep '/bin/bash' /etc/passwd | grep -m1 -v 'root' | awk -F ':' '{print $1}')"
+
 
 : "${DEBUG:=0}"
 : "${QUIET:=0}"
@@ -61,11 +66,16 @@ M_ARCH="$(uname -m)"
 
 # Distros
 IS_DEBIAN=0
+DEBIAN_VER=0
+DEBIAN_NAME=
 IS_UBUNTU=0
 UBUNTU_VER=0
+UBUNTU_NAME=
 IS_FOCAL=0			# if Ubuntu ver >= 20.04, IS_FOCAL=1
 IS_RHINO=0
 IS_FEDORA=0
+FEDORA_VER=0
+FEDORA_NAME=
 IS_WSL=0
 
 # Init system
@@ -185,17 +195,51 @@ if [[ $IS_DEBIAN -gt 0 ]]; then
 	IS_RPM=0
 	USE_YUM=0
 	IS_MAC=0
+	
+	DEBIAN_NAME="$(cat /etc/debian_version | sed -n -e 's#^\(.*\)/.*$#\1#p')"
+	
+	case "$DEBIAN_NAME" in
+		squeeze)
+			DEBIAN_VER='6'
+			;;
+		wheezy)
+			DEBIAN_VER='7'
+			;;
+		jessie)
+			DEBIAN_VER='8'
+			;;
+		stretch)
+			DEBIAN_VER='9'
+			;;
+		buster)
+			DEBIAN_VER='10'
+			;;
+		bullseye)
+			DEBIAN_VER='11'
+			;;
+		bookworm)
+			DEBIAN_VER='12'
+			;;
+		*)
+			DEBIAN_VER='0'
+			;;
+	esac
 
 	IS_UBUNTU=$(grep -c -E '^NAME="Ubuntu"' /etc/os-release 2>/dev/null)
 	# Test to see if is Ubuntu 20.04 or later..
 
-	UBUNTU_VER="$(lsb_release -rs)"
-	# Not less than 20.04 == Greater than or equal to 20.04
-	if [[ ! "$UBUNTU_VER" < '20.04' ]]; then
-		IS_FOCAL=1
-	else
-		IS_FOCAL=0
+	if [ $IS_UBUNTU -gt 0 ]; then
+		UBUNTU_VER="$(lsb_release -rs)"
+		UBUNTU_NAME="$(cat /etc/os-release | grep 'UBUNTU_CODENAME' | sed -n -e 's/^.*=\(.*\)$/\1/p')"
+		# Not less than 20.04 == Greater than or equal to 20.04
+		if [[ ! "$UBUNTU_VER" < '20.04' ]]; then
+		#~ if version_cmp "$UBUNTU_VER" -ge '20.04'; then
+			IS_FOCAL=1
+		else
+			IS_FOCAL=0
+		fi
 	fi
+	
 	
 	# Test to see if this is a Rolling Rhino Remix install
 	IS_RHINO="$(grep -c -E '^PRETTY_NAME=.*Rhino.*' /etc/os-release 2>/dev/null)"
@@ -206,6 +250,9 @@ if [[ $IS_DEBIAN -gt 0 ]]; then
 	USE_UPSTART=$IS_UPSTART
 
 elif [[ $IS_FEDORA -gt 0 ]]; then
+	FEDORA_VER="$(rpm -E %fedora)"
+	# Fedora no longer uses release names beginning with Fedora 21 in 2014
+	[ $FEDORA_VER -gt 20 ] && FEDORA_NAME='sinnombre'
 	USE_YUM=1 
 	IS_DEB=0
 	USE_APT=0
@@ -237,10 +284,10 @@ fi
 
 
 ######################################################################################################
-# Variables for fetching scripts to fetch/install from scserver to this machine.
+# Variables for fetching scripts to fetch/install from a mothership server to this machine.
 ######################################################################################################
-SCSERVER='scserver'
-SCSERVER_IP='192.168.0.198'
+MOTHERSHIP='scserver'
+MOTHERSHIP_IP='192.168.0.198'
 PING_BIN="$(which ping)"
 PING_OPTS='-c 1 -w 5'
 
@@ -300,6 +347,35 @@ function is_not_root(){
 		echo '################################################################################'
 		exit 1
 	fi
+}
+
+######################################################################################################
+# is_host( hostname, [ port_num ] ) -- See if hostname has port_num open
+######################################################################################################
+is_host(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LHOST="$1"
+	local LPORT="${2:-22}"
+	local LTIMEOUT="${3:-1}"
+	local NC_OPTS=
+	
+	# -z' Specifies that nc should just scan for listening daemons, without sending any data to them. It is an error to use this option in conjunction with the -l option.
+	# -w timeout. If a connection and stdin are idle for more than timeout seconds, then the connection is silently closed.
+	[ $IS_FEDORA -gt 0 ] && NC_OPTS="-z" || NC_OPTS="-w ${LTIMEOUT} -z"
+	
+	# Delete any user prefix of the host
+	if [ $(echo "$LHOST" | grep -c '@') -gt 0 ]; then
+		LHOST="$(echo "$LHOST" | sed -n -e 's/^.*@//p')"
+	fi
+	
+	nc $NC_OPTS "$LHOST" $LPORT >/dev/null 2>&1
+	if [ $? -lt 1 ]; then
+		[ $VERBOSE -gt 0 ] && error_echo "Host ${LHOST} responds on port ${LPORT}"
+		return 0
+	else
+		[ $QUIET -lt 1 ] && error_echo "No response from host ${LHOST} on port ${LPORT} within ${LTIMEOUT} seconds."
+		return 1
+	fi	
 }
 
 ######################################################################################################
@@ -419,7 +495,18 @@ log_msg_dir_create(){
 
 log_msg(){
 	error_echo "$@"
-	[ $LOG -gt 0 ] && error_log "$@"
+	error_log "$@"
+}
+
+log_msg_error(){
+	error_echo "$@"
+	error_log "$@"
+}
+
+log_exit(){
+    error_echo "Error: $@"
+	error_log "Error: $@"
+    exit 1
 }
 
 ######################################################################################################
@@ -483,6 +570,21 @@ pause(){
 }
 
 ######################################################################################################
+# pause_yn() -- echo a prompt and then waits for y/n response. 
+#   'Y|y' returns 0, any other character return 1
+######################################################################################################
+pause_yn(){
+	local LMSG="$@"
+	local LREPLY=
+	local LRET=1
+	error_echo "$@"
+	error_echo ' '
+	read -p "Continue? (Yes/No): " -n 1 -r LREPLY
+	error_echo ' '
+	[[ $LREPLY =~ ^[Yy]$ ]] && return 0 || return 1
+}
+
+######################################################################################################
 # debug_pause() -- Pauses execution if DEBUG > 1 && NO_PAUSE < 1  debug_pause "${FUNCNAME}: ${LINENO}"
 ######################################################################################################
 debug_pause(){
@@ -512,16 +614,37 @@ debug_cat(){
 # disp_help() -- display the getopts allowable args
 ########################################################################
 disp_help(){
-	debug_echo "${FUNCNAME}( $@ )"
+	local LSCRIPTNAME="$(basename "$0")"
+	local LDESCRIPTION="$1"
+	local LEXTRA_ARGS="${@:2}"
+	error_echo -e "\n${LSCRIPTNAME}: ${LDESCRIPTION}\n"
+	error_echo -e "\nSyntax: ${LSCRIPTNAME} [ options ] ${LEXTRA_ARGS}\n"
+	error_echo -e "    Optional parameters:\n"
+	#~ cat "$(readlink -f "$0")" | grep -E '^\s+-' | grep -v -- '--)' | sed 's/)//' 1>&2
+	if [ ! -z "$SCRIPT" ] && [ -e "$SCRIPT" ]; then
+		cat "$SCRIPT" | grep -E '^\s+-.*)\s+#' | grep -v -- '--)' | grep -vi '# hide' | sed 's/)//' 1>&2
+	else
+		grep -E '^\s+-.*)\s+#' "$0" | grep -v -- '--)' | grep -vi '# hide' | sed 's/)//' 1>&2
+	fi
+	error_echo ' '
+}
+
+disp_help_old(){
 	local LSCRIPTNAME="$(basename "$0")"
 	local LDESCRIPTION="$1"
 	local LEXTRA_ARGS="${@:2}"
 	error_echo  -e "\n${LSCRIPTNAME}: ${LDESCRIPTION}\n"
 	error_echo -e "Syntax: ${LSCRIPTNAME} ${LEXTRA_ARGS}\n"
-	error_echo "            Optional parameters:"
+	error_echo -e "    Optional parameters:\n"
 	# See: https://gist.github.com/sv99/6852cc2e2a09bd3a68ed for explaination of the sed newling replacement
-	cat "$(readlink -f "$0")" | grep -E '^\s+-' | grep -v -- '--)' | grep -vi '# hide' | sed -e 's/)//' -e 's/#/\n\t\t\t\t#/' | fmt -t -s | sed ':a;N;$!ba;s/\n\s\+\(#\)/\t\1/g' 1>&2
+	#~ cat "$(readlink -f "$0")" | grep -E '^\s+-' | grep -v -- '--)' | grep -vi '# hide' | sed -e 's/)//' -e 's/#/\n\t\t\t\t#/' | fmt -t -s | sed ':a;N;$!ba;s/\n\s\+\(#\)/\t\1/g' 1>&2
+	if [ ! -z "$SCRIPT" ] && [ -e "$SCRIPT" ]; then
+		cat "$SCRIPT" | grep -E '^\s+-.*)\s+#' | grep -v -- '--)' | grep -vi '# hide' | sed 's/)//' 1>&2
+	else
+		grep -E '^\s+-.*)\s+#' "$0" | grep -v -- '--)' | grep -vi '# hide' | sed 's/)//' 1>&2
+	fi
 	error_echo ' '
+	
 }
 
 ######################################################################################################
@@ -1803,6 +1926,12 @@ default_octet_get() {
 	debug_echo "${FUNCNAME}( $@ )"
 
 	case "$(hostname)" in
+		gharris)
+			echo '101'
+			;;
+		gharris-mini)
+			echo '110'
+			;;
 		scserver)
 			echo '198'
 			;;
@@ -1811,6 +1940,9 @@ default_octet_get() {
 			;;
 		squeezenas-mini)
 			echo '111'
+			;;
+		squeezenas-micro)
+			echo '112'
 			;;
 		alunas)
 			echo '5'
@@ -2046,8 +2178,12 @@ subnet_get(){
 iface_subnet_get(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local LIFACE="$1"
-	local LSUBNET="$(ip route | grep "$LIFACE" | sed -n '2p' | awk '{ print $1 }')"
-	[ -z "$LSUBNET" ] && LSUBNET="$(ip -br a | grep "$LIFACE" | awk '{ print $3 }' | sed -n 's#\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.\)[0-9]\{1,3\}/\([0-9]\{1,2\}\).*$#\10/\2#p')"
+	local LCOUNT="${2:-1}"
+	
+	# WGH 20230312 mod make compatable with older & newer versions of ip
+	local LSUBNET="$(ip route | grep -m${LCOUNT} -E "\.0\/.*${LIFACE}.*src" | awk '{print $1}')"
+
+	[ -z "$LSUBNET" ] && LSUBNET="$(ip -br a | grep "${LIFACE}\s\+UP\s\+" | awk '{ print $3 }' | sed -n 's#\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.\)[0-9]\{1,3\}/\([0-9]\{1,2\}\).*$#\10/\2#p')"
 
 	[ $DEBUG -gt 0 ] && error_echo "INST_SUBNET of ${LIFACE} == ${LSUBNET}"
 	echo "$LSUBNET"
@@ -2112,18 +2248,20 @@ ipaddr_subnet_get(){
 		LIPADDR="$(ipaddress_get)"
 	fi
 
-	LSUBNET=$(ip -br a | grep "$LIPADDR" | awk '{ print $3 }' | sed -n 's#\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.\)[0-9]\{1,3\}/\([0-9]\{1,2\}\).*$#\10/\2#p')
+	#~ LSUBNET=$(ip -br a | grep "$LIPADDR" | awk '{ print $3 }' | sed -n 's#\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.\)[0-9]\{1,3\}/\([0-9]\{1,2\}\).*$#\10/\2#p')
+	# WGH 20230312 mod make compatable with older & newer versions of ip, tested with ubuntu 16.04, 20.04, 22.04
+	LSUBNET="$(ip route | grep -E "\.0\/.*link *src *${LIPADDR}" | awk '{print $1}')"
 
 	# Punt!
 	[ -z "$LSUBNET" ] && LSUBNET=$(echo "$LIPADDR" | sed -n 's/\(.\{1,3\}\)\.\(.\{1,3\}\)\.\(.\{1,3\}\)\..*/\1\.\2\.\3\.0\/24/p')
 
 	[ $DEBUG -gt 0 ] && error_echo "Subnet of ${LIPADDR} == ${LSUBNET}"
 
-	echo "$LSUBNET"
-
 	if [ -z "$LSUBNET" ]; then
 		return 1
 	fi
+
+	echo "$LSUBNET"
 	return 0
 }
 
@@ -4267,6 +4405,54 @@ systemd_unit_file_create(){
 }
 
 ######################################################################################################
+# systemd_unit_file_env_set() Insert or update the PIDFile path
+######################################################################################################
+systemd_unit_file_env_set(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LUNIT="$1"
+	local LUNIT_FILE=
+	local LENV_FILE=
+
+	[ -z "$LUNIT" ] && LUNIT="$INST_NAME"
+	
+	[ $(echo $LUNIT | grep -c -E '\.') -lt 1 ] && LUNIT="${LUNIT}.service"
+
+	LUNIT_FILE="/lib/systemd/system/${LUNIT}"
+	
+	if [ ! -f "$LUNIT_FILE" ]; then
+		error_echo "${FUNCNAME} error: unit file ${LUNIT_FILE} not found."
+		return 1
+	fi
+	
+	[ $IS_DEBIAN -gt 0 ] && LENV_FILE="/etc/default/${LUNIT%%.*}" || LENV_FILE="/etc/sysconfig/${LUNIT%%.*}"
+
+	# EnvironmentFile=/etc/default/wsdd
+	
+	if [ $(grep -c -E "^EnvironmentFile=${LENV_FILE}" "$LUNIT_FILE") -gt 0 ]; then
+		return 0
+	fi
+
+	# If no EnvironmentalFile specified..
+	if [ $(grep -c -E '^EnvironmentFile=.*' "$LUNIT_FILE") -lt 1 ]; then
+		# Insert the env file spec on the line above ExecStart=
+		error_echo "Inserting 'EnvironmentFile=${LENV_FILE}' into ${LUNIT_FILE}"
+		sed -i -e "\#^ExecStart=.*#i EnvironmentFile=${LENV_FILE}" "$LUNIT_FILE"
+	# Update the EnvironmentalFile spec..
+	else
+		error_echo "Updating 'EnvironmentFile=${LENV_FILE}' in ${LUNIT_FILE}"
+		sed -i -e "s#^EnvironmentFile=.*#EnvironmentFile=${LENV_FILE}#" "$LUNIT_FILE"
+	fi
+
+	if [ $(grep -c -E "^EnvironmentFile=${LENV_FILE}" "$LUNIT_FILE") -lt 1 ]; then
+		error_echo "${FUNCNAME} error: Could not update EnvironmentFile= in ${LUNIT_FILE}."
+		return 1
+	fi
+	
+	return 0
+
+}
+
+######################################################################################################
 # systemd_unit_file_pidfile_set() Insert or update the PIDFile path
 ######################################################################################################
 systemd_unit_file_pidfile_set(){
@@ -4294,10 +4480,10 @@ systemd_unit_file_pidfile_set(){
     if [ -f "$LUNIT_FILE" ]; then
 
 		if [ $(grep -c -E 'PIDFile=.*$' "$LUNIT_FILE") -gt 0 ]; then
-			echo "Changing ${LUNIT_FILE} PIDFile to ${L_PIDFILE}"
+			error_echo "Changing ${LUNIT_FILE} PIDFile to ${L_PIDFILE}"
 			sed -i "s/^PIDFile=.*\$/PIDFile=${L_PIDFILE}/" "$LUNIT_FILE"
 		else
-			echo "Inserting \"PIDFile=${L_PIDFILE}\" into ${LUNIT_FILE}.."
+			error_echo "Inserting \"PIDFile=${L_PIDFILE}\" into ${LUNIT_FILE}.."
 			#~ sed -i "0,/^\[Service\].*\$/s//\[Service\]\PIDFile=${L_PIDFILE}/" "$LUNIT_FILE"
 			sed -i "0,/^\[Service\].*\$/s##\[Service\]\nPIDFile=${L_PIDFILE}#" "$LUNIT_FILE"
 		fi
@@ -4319,7 +4505,7 @@ systemd_unit_file_pidfile_remove(){
 
     if [ -f "$UNIT_FILE" ]; then
 		if [ $(grep -c -E '^PIDFile.*$' "$UNIT_FILE") -gt 0 ]; then
-			echo "Deleting ${UNIT_FILE} PIDFile"
+			error_echo "Deleting ${UNIT_FILE} PIDFile"
 			sed -i '/^PIDFile.*$/d' "$UNIT_FILE"
 		fi
 	fi
@@ -4347,10 +4533,10 @@ systemd_unit_file_runtimedir_set(){
     if [ -f "$UNIT_FILE" ]; then
 
 		if [ $(grep -c -E 'RuntimeDirectory=.*$' "$UNIT_FILE") -gt 0 ]; then
-			echo "Changing ${UNIT_FILE} RuntimeDirectory to ${L_INST_NAME}"
+			error_echo "Changing ${UNIT_FILE} RuntimeDirectory to ${L_INST_NAME}"
 			sed -i "s/^RuntimeDirectory=.*\$/RuntimeDirectory=${L_INST_NAME}/" "$UNIT_FILE"
 		else
-			echo "Inserting \"RuntimeDirectory=${L_INST_NAME}\" into ${UNIT_FILE}.."
+			error_echo "Inserting \"RuntimeDirectory=${L_INST_NAME}\" into ${UNIT_FILE}.."
 			sed -i "0,/^\[Service\].*\$/s//\[Service\]\nRuntimeDirectory=${L_INST_NAME}/" "$UNIT_FILE"
 		fi
 	fi
@@ -4372,7 +4558,7 @@ systemd_unit_file_runtimedir_remove(){
     if [ -f "$UNIT_FILE" ]; then
 		# Delete any existing RuntimeDirectory
 		if [ $(grep -c -E '^RuntimeDirectory.*$' "$UNIT_FILE") -gt 0 ]; then
-			echo "Deleting ${UNIT_FILE} RuntimeDirectory"
+			error_echo "Deleting ${UNIT_FILE} RuntimeDirectory"
 			sed -i '/^RuntimeDirectory.*$/d' "$UNIT_FILE"
 		fi
 	fi
@@ -4401,10 +4587,10 @@ systemd_unit_file_workingdir_set(){
     if [ -f "$UNIT_FILE" ]; then
 
 		if [ $(grep -c -E 'WorkingDirectory=.*$' "$UNIT_FILE") -gt 0 ]; then
-			echo "Changing ${UNIT_FILE} WorkingDirectory to ${L_INST_NAME}"
+			error_echo "Changing ${UNIT_FILE} WorkingDirectory to ${L_INST_NAME}"
 			sed -i "s/^WorkingDirectory=.*\$/WorkingDirectory=${L_WORKINGDIR}/" "$UNIT_FILE"
 		else
-			echo "Inserting \"WorkingDirectory=${L_WORKINGDIR}\" into ${UNIT_FILE}.."
+			error_echo "Inserting \"WorkingDirectory=${L_WORKINGDIR}\" into ${UNIT_FILE}.."
 			#~ sed -i "0,/^\[Service\].*\$/s//\[Service\]\nRestart=${TYPE_ARGS}/" "$UNIT_FILE"
 			#~ sed -i "0,/^\[Service\].*\$/s//\[Service\]\WorkingDirectory=${L_WORKINGDIR}/" "$UNIT_FILE"
 			sed -i "0,/^\[Service\].*\$/s##\[Service\]\nWorkingDirectory=${L_WORKINGDIR}#" "$UNIT_FILE"
@@ -4429,7 +4615,7 @@ systemd_unit_file_workingdir_remove(){
     if [ -f "$UNIT_FILE" ]; then
 		# Delete any existing WorkingDirectory
 		if [ $(grep -c -E '^WorkingDirectory.*$' "$UNIT_FILE") -gt 0 ]; then
-			echo "Deleting ${UNIT_FILE} WorkingDirectory"
+			error_echo "Deleting ${UNIT_FILE} WorkingDirectory"
 			sed -i '/^WorkingDirectory.*$/d' "$UNIT_FILE"
 		fi
 	fi
@@ -4456,7 +4642,7 @@ systemd_unit_file_prestart_set(){
     if [ -f "$UNIT_FILE" ]; then
 		# Delete any existing ExecStartPre
 		if [ $(grep -c -E '^ExecStartPre.*$' "$UNIT_FILE") -gt 0 ]; then
-			echo "Deleting ${UNIT_FILE} ExecStartPre"
+			error_echo "Deleting ${UNIT_FILE} ExecStartPre"
 			sed -i '/^ExecStartPre.*$/d' "$UNIT_FILE"
 		fi
 
@@ -4464,7 +4650,7 @@ systemd_unit_file_prestart_set(){
 		if [ ! -z "$EXEC_ARGS" ]; then
 			# Escape the args..
 			EXEC_ARGS="$(echo "$EXEC_ARGS" | sed -e 's/[\/&]/\\&/g')"
-			echo "Setting ${UNIT_FILE} ExecStartPre=-${EXEC_ARGS}"
+			error_echo "Setting ${UNIT_FILE} ExecStartPre=-${EXEC_ARGS}"
 			#~ ExecStartPre=-/bin/rm -f /etc/apcupsd/powerfail
 			sed -i -e "s/^ExecStart.*\$/ExecStartPre=${EXEC_ARGS}\n&/" "$UNIT_FILE"
 		fi
@@ -4493,10 +4679,10 @@ systemd_unit_file_fork_set(){
 
     if [ -f "$UNIT_FILE" ]; then
 		if [ $(grep -c -E '^Type=.*$' "$UNIT_FILE") -gt 0 ]; then
-			echo "Changing ${UNIT_FILE} type to ${TYPE_ARGS}"
+			error_echo "Changing ${UNIT_FILE} type to ${TYPE_ARGS}"
 			sed -i "s/^Type=.*\$/${TYPE_ARGS}/" "$UNIT_FILE"
 		else
-			echo "Inserting \"${TYPE_ARGS}\" into ${UNIT_FILE}.."
+			error_echo "Inserting \"${TYPE_ARGS}\" into ${UNIT_FILE}.."
 			sed -i "0,/^\[Service\].*\$/s//\[Service\]\n${TYPE_ARGS}/" "$UNIT_FILE"
 		fi
 	fi
@@ -4525,10 +4711,10 @@ systemd_unit_file_restart_set(){
 
     if [ -f "$UNIT_FILE" ]; then
 		if [ $(grep -c -E '^Restart=.*$' "$UNIT_FILE") -gt 0 ]; then
-			echo "Changing ${UNIT_FILE} Restart to ${RESTART_ARGS}"
+			error_echo "Changing ${UNIT_FILE} Restart to ${RESTART_ARGS}"
 			sed -i "s/^Restart=.*\$/Restart=${RESTART_ARGS}/" "$UNIT_FILE"
 		else
-			echo "Inserting \"Restart=${RESTART_ARGS}\" into ${UNIT_FILE}.."
+			error_echo "Inserting \"Restart=${RESTART_ARGS}\" into ${UNIT_FILE}.."
 			sed -i "0,/^\[Service\].*\$/s//\[Service\]\nRestart=${TYPE_ARGS}/" "$UNIT_FILE"
 		fi
 	fi
@@ -4556,10 +4742,10 @@ systemd_unit_file_restartsecs_set(){
 
     if [ -f "$UNIT_FILE" ]; then
 		if [ $(grep -c -E '^Restart=.*$' "$UNIT_FILE") -gt 0 ]; then
-			echo "Changing ${UNIT_FILE} RestartSec to ${RESTART_ARGS}"
+			error_echo "Changing ${UNIT_FILE} RestartSec to ${RESTART_ARGS}"
 			sed -i "s/^RestartSec=.*\$/Restart=${RESTART_ARGS}/" "$UNIT_FILE"
 		else
-			echo "Inserting \"RestartSec=${RESTART_ARGS}\" into ${UNIT_FILE}.."
+			error_echo "Inserting \"RestartSec=${RESTART_ARGS}\" into ${UNIT_FILE}.."
 			sed -i "0,/^\[Service\].*\$/s//\[Service\]\nRestartSec=${TYPE_ARGS}/" "$UNIT_FILE"
 		fi
 	fi
@@ -4888,6 +5074,36 @@ systemd_unit_file_list(){
 	return $LRET
 }
 
+
+######################################################################################################
+# systemd_unit_file_is_installed() Return 0 if unit file exists and systemd knows about it, 1 if not.
+######################################################################################################
+systemd_unit_file_is_installed(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LUNIT="$1"
+	local LRET=
+	local LINIT_SCRIPT=
+	
+	[ -z "$LUNIT" ] && LUNIT="$INST_NAME"
+
+	# If no wildcards and if no extension on the unit name, assume service
+	[ $(echo "$LUNIT" | grep -c '*') -lt 1 ] && [ $(echo "$LUNIT" | grep -c -e '.*\..*') -lt 1 ] && LUNIT="${LUNIT}.service"
+	
+	[ $(systemctl --no-pager cat $LUNIT 2>/dev/null | wc -l) -gt 0 ] && LRET=0 || LRET=1
+	
+	if [ $DEBUG -gt 0 ] || [ $VERBOSE -gt 0 ]; then
+		if [ $LRET -gt 0 ]; then
+			debug_echo "Unit file ${LUNIT} is NOT installed.."
+		else
+			debug_echo "Unit file ${LUNIT} is installed.."
+			[ $DEBUG -gt 0 ] && LINIT_SCRIPT="$(find /lib/ -type f -name "$LUNIT")"
+			debug_echo "${LUNIT}: ${LINIT_SCRIPT}"
+		fi
+	fi
+	
+	return $LRET
+}
+
 ######################################################################################################
 # systemd_unit_file_is_enabled() Return 0 if unit file is enabled, 1 if not enabled or nonexistant.
 ######################################################################################################
@@ -5069,6 +5285,7 @@ systemd_unit_file_remove(){
 		fi
 	done
 	systemctl daemon-reload >/dev/null 2>&1
+	systemctl reset-failed >/dev/null 2>&1
 }
 
 
@@ -5171,7 +5388,10 @@ sysv_init_file_remove(){
 		echo "Removing ${INIT_SCRIPT} sysv init file"
 		rm "$INIT_SCRIPT"
 	fi
-
+	if [ $USE_SYSTEMD -gt 0 ]; then		
+		systemctl daemon-reload >/dev/null 2>&1
+		systemctl reset-failed >/dev/null 2>&1
+	fi
 }
 
 main_disable_service(){
@@ -5307,18 +5527,18 @@ ping_wait(){
 }
 
 ########################################################################
-# is_scserver -- echos 1 if scserver is available on the local subnet
+# is_mothership -- echos 1 if the mothership server is available on the local subnet
 ########################################################################
-is_scserver() {
+is_mothership() {
 	debug_echo "${FUNCNAME}( $@ )"
 
-	# If we are scserver, return 0 to force downloading zips, rather than fetching from ourselves!
-	if [ "$(hostname)" = "$SCSERVER" ]; then
+	# If we are on the mothership, return 0 to force downloading zips, rather than fetching from ourselves!
+	if [ "$(hostname)" = "$MOTHERSHIP" ]; then
 		echo '0'
 		return 1
 	fi
 
-	ping_wait "$SCSERVER_IP"
+	ping_wait "$MOTHERSHIP_IP"
 	if [ $? -eq 0 ]; then
 		echo '1'
 		return 0
@@ -5341,8 +5561,8 @@ ami_scserver(){
 }
 
 ########################################################################
-# script_dir_fetch( /scriptdirpath -- copies files from scserver to
-#     the scriptdirpath via robocopy|rsync|scp
+# script_dir_fetch( /scriptdirpath -- copies files from the mothership
+#     to the scriptdirpath via robocopy|rsync|scp
 ########################################################################
 script_dir_fetch(){
 	debug_echo "${FUNCNAME}( $@ )"
@@ -5403,11 +5623,11 @@ script_dir_fetch(){
 
 	# Construct the COPYCMD using our most capable available utility..
 	if [ ! -z "$LROBOCOPY" ]; then
-		LCOPYCMD="${LROBOCOPY} --quiet --password=${LPASS} -se ${LUSER}@scserver:${LSCRIPTDIR} ${LTARGETDIR} ${LTO_NULL}"
+		LCOPYCMD="${LROBOCOPY} --quiet --password=${LPASS} -se ${LUSER}@${MOTHERSHIP}:${LSCRIPTDIR} ${LTARGETDIR} ${LTO_NULL}"
 	elif [ ! -z "$LRSYNC" ]; then
-		LCOPYCMD="${LSSHPASS} ${LRSYNC} -avzP ${LUSER}@scserver:${LSCRIPTDIR} ${LTARGETDIR} ${LTO_NULL}"
+		LCOPYCMD="${LSSHPASS} ${LRSYNC} -avzP ${LUSER}@${MOTHERSHIP}:${LSCRIPTDIR} ${LTARGETDIR} ${LTO_NULL}"
 	elif [ ! -z "$LSCP" ]; then
-		LCOPYCMD="${LSSHPASS} ${LSCP} -rp ${LUSER}@scserver:${LSCRIPTDIR} ${LTARGETDIR} ${LTO_NULL}"
+		LCOPYCMD="${LSSHPASS} ${LSCP} -rp ${LUSER}@${MOTHERSHIP}:${LSCRIPTDIR} ${LTARGETDIR} ${LTO_NULL}"
 	fi
 
 	if [ -z "$LCOPYCMD" ]; then
@@ -5563,7 +5783,7 @@ args_clean() {
 
 ########################################################################
 # scripts_get( scriptdirs ) -- arbitrates between fetching scripts from
-#      scserver or downloading zipfiles from hegardtfoundation.org
+#      the mothership server or downloading zipfiles from hegardtfoundation.org
 ########################################################################
 scripts_get(){
 	debug_echo "${FUNCNAME}( $@ )"
@@ -5574,11 +5794,11 @@ scripts_get(){
 
 	local LDIR=
 
-	local LIS_SCSERVER=$(is_scserver)
+	local LIS_MOTHERSHIP=$(is_mothership)
 
 	for LDIR in $LSCRIPTDIRS
 	do
-		if [ $LIS_SCSERVER -gt 0 ]; then
+		if [ $LIS_MOTHERSHIP -gt 0 ]; then
 			script_dir_fetch "$LDIR"
 		else
 			script_zip_download "$LDIR"
@@ -5587,6 +5807,261 @@ scripts_get(){
 
 }
 
+pkg_is_installed(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LPKG_LIST="$1"
+	local LPKG=
+	local LPKGS=""
+	local LPKG_ERRS=""
+	local LRET=1
+	
+	if [ $USE_APT -gt 0 ]; then
+		for LPKG in $LPKG_LIST;
+		do
+			if [ $(apt-cache pkgnames "$LPKG" | wc -l) -lt 1 ]; then
+				error_echo "Error: Package ${LPKG} not found."
+				LPKG_ERRS="${LPKG_ERRS} ${LPKG}"
+			else
+				LPKGS="${LPKGS} ${LPKG}"
+			fi
+		done
+	elif [ $USE_YUM -gt 0 ]; then
+		LPKGS="$(dnf list $LPKG_LIST | grep -v 'Last metadata' | sed -n -e 's/^\([^\.]\+\)\..*$/\1/p' | xargs)"
+		for LPKG in $LPKG_LIST
+		do
+			if [ $(echo "$LPKG" | grep -c -w "$LPKGS") -lt 1 ]; then
+				error_echo "Error: Package ${LPKG} not found."
+				LPKG_ERRS="${LPKG_ERRS} ${LPKG}"
+			fi
+		done
+
+	fi
+	
+	if [ ! -z "$LPKG_ERRS" ]; then
+		LRET=1
+		error_echo "Error -- the following packages were not found: ${LPKG_ERRS}"
+		DEBUG=3
+	else
+		LRET=0
+	fi
+	
+	
+	debug_echo "${LINENO} -- ${FUNCNAME}() found packages: ${LPKGS}"
+
+	echo "$LPKGS" | xargs
+	return $LRET
+}
+
+pkg_install(){
+	debug_echo "${FUNCNAME}( $@ )"
+}
+
+########################################################################
+# vercmp (ver1, ver2) -- compares two version strings. Returns:
+#   ver1 == ver2: 0
+#   ver1 > ver2: 1
+#   ver1 < ver2: 2
+########################################################################
+
+vercmp(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LVARLEFT="$1"
+	local LVARRIGHT="$2"
+	local LRET=0
+	
+	# $LVARLEFT -eq $LVARRIGHT :: 0
+    if [[ $LVARLEFT == $LVARRIGHT ]]; then
+        LRET=0
+	else
+		local LIFS=$IFS
+		local IFS=.
+		local i ver1=($LVARLEFT) ver2=($LVARRIGHT)
+		# fill empty fields in ver1 with zeros
+		for ((i=${#ver1[@]}; i<${#ver2[@]}; i++))
+		do
+			ver1[i]=0
+		done
+		for ((i=0; i<${#ver1[@]}; i++))
+		do
+			if [[ -z ${ver2[i]} ]]; then
+				# fill empty fields in ver2 with zeros
+				ver2[i]=0
+			fi
+			
+			# $LVARLEFT -gt $LVARRIGHT :: 1
+			if ((10#${ver1[i]} > 10#${ver2[i]})); then
+				LRET=1
+				break
+			fi
+			
+			# $LVARLEFT -lt $LVARRIGHT :: 2
+			if ((10#${ver1[i]} < 10#${ver2[i]})); then
+				LRET=2
+				break
+			fi
+		done
+		IFS=$LIFS
+		#~ LRET=0
+    fi
+
+	return $LRET
+}
+
+########################################################################
+# version_cmp ( version_string1, operator, version_string2) compares two
+#	version strings in the same fashion as 
+#
+#	dpkg --compare-versions ver1 op ver2
+#
+#	Compare  version  numbers, where op is a binary operator. dpkg
+#	returns success (zero result) if the  specified  condition  is
+#	satisfied,  and  failure (nonzero result) otherwise. There are
+#	two groups of operators, which differ in  how  they  treat  an
+#	empty  ver1  or  ver2. These treat an empty version as earlier
+#	than any version: lt le eq ne ge gt. These treat an empty ver‐
+#	sion as later than any version: lt-nl le-nl ge-nl gt-nl. These
+#	are provided only for compatibility with control file  syntax:
+#	< << <= = >= >> >.
+#
+########################################################################
+
+version_cmp(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LVARLEFT="$1"
+	local LCOMPTYPE="$2"
+	local LVARRIGHT="$3"
+	local LRET=0
+	local FALSE=1
+	local TRUE=0
+	
+	# Get the relationship..
+	vercmp "$LVARLEFT" "$LVARRIGHT"
+	LRET=$?
+	
+	debug_echo "${FUNCNAME}: vercmp '${LVARLEFT}' '${LVARRIGHT}' returned ${LRET}"
+	
+	# Strip leading hyphins..
+	LCOMPTYPE="$(echo "$LCOMPTYPE" | sed -e 's/^-*//')"
+	
+	# Empties are greater than any version
+	case "$LCOMPTYPE" in
+
+		# These treat an empty version as later than any version, i.e. null is always greater than
+
+		# left less than right
+		lt-nl)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $FALSE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ $LRET -eq 0 ] && return $FALSE
+			[ $LRET -eq 1 ] && return $FALSE
+			[ $LRET -eq 2 ] && return $TRUE
+			return 1
+			;;
+
+		# left less than or equal to right
+		le-nl)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $FALSE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ $LRET -eq 0 ] && return $TRUE
+			[ $LRET -eq 1 ] && return $FALSE
+			[ $LRET -eq 2 ] && return $TRUE
+			return 0
+			;;
+
+		# left greater than or equal to right
+		ge-nl)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $TRUE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ $LRET -eq 0 ] && return $TRUE
+			[ $LRET -eq 1 ] && return $TRUE
+			[ $LRET -eq 2 ] && return $FALSE
+			;;
+
+		# left greater than right
+		gt-nl)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $TRUE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ $LRET -eq 0 ] && return $FALSE
+			[ $LRET -eq 1 ] && return $TRUE
+			[ $LRET -eq 2 ] && return $FALSE
+			;;
+			
+		# These treat an empty version as earlier than any version, i.e. null is always less than
+
+		# left less than right
+		lt)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $TRUE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ $LRET -eq 0 ] && return $FALSE
+			[ $LRET -eq 1 ] && return $FALSE
+			[ $LRET -eq 2 ] && return $TRUE
+			return 1
+			;;
+
+		# left less than or equal to right
+		le)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $TRUE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ $LRET -eq 0 ] && return $TRUE
+			[ $LRET -eq 1 ] && return $FALSE
+			[ $LRET -eq 2 ] && return $TRUE
+			return 0
+			;;
+
+		# left equal to right
+		eq)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $FALSE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ $LRET -eq 0 ] && return $TRUE
+			[ $LRET -eq 1 ] && return $FALSE
+			[ $LRET -eq 2 ] && return $FALSE
+			return 0
+			;;
+
+		# left not equal to right
+		ne)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $TRUE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ $LRET -eq 0 ] && return $FALSE
+			[ $LRET -eq 1 ] && return $TRUE
+			[ $LRET -eq 2 ] && return $TRUE
+			return 0
+			;;
+
+		# left greater than or equal to right
+		ge)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $FALSE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ $LRET -eq 0 ] && return $TRUE
+			[ $LRET -eq 1 ] && return $TRUE
+			[ $LRET -eq 2 ] && return $FALSE
+			;;
+
+		# left greater than right
+		gt)
+			[ -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $FALSE
+			[ -z "$LVARLEFT" ] && [ ! -z "$LVARRIGHT" ] && return $FALSE
+			[ ! -z "$LVARLEFT" ] && [ -z "$LVARRIGHT" ] && return $TRUE
+			[ $LRET -eq 0 ] && return $FALSE
+			[ $LRET -eq 1 ] && return $TRUE
+			[ $LRET -eq 2 ] && return $FALSE
+			;;
+	esac
+
+	debug_echo "${FUNCNAME}: what are we doing here??"
+		
+		
+	return 255
+}
 
 systype_disp(){
 	[ "$(basename "$0")" = "instsrv_functions.sh" ] && echo "$(basename "$0") version: ${INCSCRIPT_VERSION}"; echo ' '
@@ -5595,11 +6070,16 @@ systype_disp(){
 	echo ' '
 
 	echo "IS_DEBIAN        == ${IS_DEBIAN}"
+	echo "DEBIAN_VER       == ${DEBIAN_VER}"
+	echo "DEBIAN_NAME      == ${DEBIAN_NAME}"
 	echo "IS_UBUNTU        == ${IS_UBUNTU}"
 	echo "UBUNTU_VER       == ${UBUNTU_VER}"
+	echo "UBUNTU_NAME      == ${UBUNTU_NAME}"
 	echo "IS_FOCAL         == ${IS_FOCAL}"
 	echo "IS_RHINO         == ${IS_RHINO}"
 	echo "IS_FEDORA        == ${IS_FEDORA}"
+	echo "FEDORA_VER       == ${FEDORA_VER}"
+	echo "FEDORA_NAME      == ${FEDORA_NAME}"
 	echo "IS_MAC           == ${IS_MAC}"
 	echo "IS_WSL           == ${IS_WSL}"
 	echo ' '
@@ -5620,15 +6100,15 @@ systype_disp(){
 	echo "USE_YUM          == ${USE_YUM}"
 	echo ' '
 
+	echo "IS_NETPLAN       == ${IS_NETPLAN}"
+	echo ' '
+	
 	echo "IS_NETINTERFACES == ${IS_NETINTERFACES}"
 	echo "IS_DHCPCD        == ${IS_DHCPCD}"
 	echo "IS_NETWORKD      == ${IS_NETWORKD}"
 	echo "IS_NETWORKMNGR   == ${IS_NETWORKMNGR}"
 	echo ' '
 
-	echo "IS_NETPLAN       == ${IS_NETPLAN}"
-	echo ' '
-	
 	echo "USE_UFW          == ${USE_UFW}"
 	echo "USE_FIREWALLD    == ${USE_FIREWALLD}"
 	echo ' '
@@ -5638,9 +6118,14 @@ systype_disp(){
 	echo "IS_TEXT          == ${IS_TEXT}"
 	echo ' '
 	echo ' '
+	echo "UUSER            == ${UUSER}"
+	echo ' '
+	echo ' '
 }
 
 if [ $DEBUG -gt 0 ]; then
 	systype_disp
+	#~ version_cmp "$UBUNTU_VER" -ge '20.04' && echo 'True'
+
 fi
 

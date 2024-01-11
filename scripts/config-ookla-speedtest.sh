@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCRIPT_VERSION=20220130.01
+SCRIPT_VERSION=20220729.112105
 
 #
 # ookla-speedtest-update.sh  [--help] [-d|--debug] [-t|--test] [-f|--force] [-q|--quiet] [--no-pause] [--update] [--remove] [--install] [--direct] [optional_username]
@@ -62,8 +62,8 @@ INST_DESC='Ookla speedtest install script'
 
 INST_USER=
 INST_LICENSE_FILE=
-INST_VERSION='1.1.1'
-CUR_VERSION=
+INST_VERSION=20220729.112105
+CUR_VERSION=20220729.112105
 LCWA_ENVFILE=
 
 # Distinguish between debian and redhat systems..
@@ -1220,7 +1220,7 @@ fi
 
 # See if we need to update..
 if [ $UPDATE -gt 0 ]; then
-	CUR_VERSION="$(ookla_speedtest_version_get)"
+	CUR_VERSION=20220729.112105
 	INSTALL=0
 	REMOVE=0
 	if [ -z "$CUR_VERSION" ]; then

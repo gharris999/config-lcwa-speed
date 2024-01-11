@@ -69,7 +69,7 @@ env_file_exists(){
 
 # Remote & local repos
 #~ LCWA_REPO='https://github.com/gharris999/LCWA.git'
-#~ LCWA_REPO_BRANCH='origin/master'
+#~ LCWA_REPO_BRANCH='origin/wgh_mods01'
 #~ LCWA_REPO_LOCAL="${LCWA_INSTDIR}/speedtest"
 #~ LCWA_REPO_LOCAL_CONF="${LCWA_REPO_LOCAL}/config/test_speed_cfg.json"
 #~ LCWA_REPO_LOCAL_PATCHDIR="${LCWA_REPO_LOCAL}_patches/src"
@@ -96,6 +96,8 @@ env_file_exists(){
 
 # Command-line arguments for the daemon
 #~ LCWA_OPTIONS="--conf ${LCWA_CONFFILE}"
+#~ LCWA_DEBUG_OPTIONS="--conf ${LCWA_CONFFILE} --time 1 --verbose --nowait --testdb"
+
 #~ LCWA_EXEC_ARGS="\$LCWA_OPTIONS"
 #~ LCWA_EXEC_ARGS_DEBUG="--adebug \$LCWA_OPTIONS"
 
@@ -152,6 +154,7 @@ function env_vars_name(){
 "LCWA_VCLOG" \
 "LCWA_DAEMON" \
 "LCWA_OPTIONS" \
+"LCWA_DEBUG_OPTIONS" \
 "LCWA_EXEC_ARGS" \
 "LCWA_EXEC_ARGS_DEBUG" \
 "LCWA_DEBUG_SCRIPT" \
@@ -201,7 +204,7 @@ function env_vars_defaults_get(){
                                                             
 # Remote & local repos                                      
 [ -z "$LCWA_REPO" ] 				&&  LCWA_REPO='https://github.com/gharris999/LCWA.git'
-[ -z "$LCWA_REPO_BRANCH" ] 			&&  LCWA_REPO_BRANCH='origin/master'
+[ -z "$LCWA_REPO_BRANCH" ] 			&&  LCWA_REPO_BRANCH='origin/wgh_mods01'
 [ -z "$LCWA_REPO_LOCAL" ] 			&&  LCWA_REPO_LOCAL="${LCWA_INSTDIR}/speedtest"
 [ -z "$LCWA_REPO_LOCAL_CONF" ] 		&&  LCWA_REPO_LOCAL_CONF="${LCWA_REPO_LOCAL}/config/test_speed_cfg.json"
 [ -z "$LCWA_REPO_LOCAL_PATCHDIR" ] 	&&  LCWA_REPO_LOCAL_PATCHDIR="${LCWA_REPO_LOCAL}_patches/src"
@@ -217,7 +220,7 @@ function env_vars_defaults_get(){
 [ -z "$LCWA_ENVFILE" ] 				&&  [ $IS_DEBIAN -gt 0 ] && LCWA_ENVFILE="/etc/default/${LCWA_SERVICE}" || LCWA_ENVFILE="/etc/sysconfig/${LCWA_SERVICE}"
 [ -z "$LCWA_CONFDIR" ] 				&&  LCWA_CONFDIR="/etc/${LCWA_INSTANCE}"
 [ -z "$LCWA_CONFFILE" ] 			&&  LCWA_CONFFILE="${LCWA_CONFDIR}/${LCWA_SERVICE}.json"
-[ -z "$LCWA_DB_KEYFILE" ] 			&&  LCWA_DB_KEYFILE="${LCWA_CONFDIR}/LCWA_d.txt"							
+[ -z "$LCWA_DB_KEYFILE" ] 			&&  LCWA_DB_KEYFILE="${LCWA_CONFDIR}/LCWA_a.txt"							
 [ -z "$LCWA_LOGDIR" ] 				&&  LCWA_LOGDIR="/var/log/${LCWA_INSTANCE}"
 [ -z "$LCWA_LOGFILE" ] 				&&  LCWA_LOGFILE="${LCWA_LOGDIR}/${LCWA_SERVICE}.log"
 [ -z "$LCWA_ERRFILE" ] 				&&  LCWA_ERRFILE="${LCWA_LOGDIR}/${LCWA_SERVICE}-error.log"
@@ -228,6 +231,7 @@ function env_vars_defaults_get(){
                                                             
 # Command-line arguments for the daemon                     
 [ -z "$LCWA_OPTIONS" ] 				&&  LCWA_OPTIONS="--conf ${LCWA_CONFFILE}"
+[ -z "$LCWA_DEBUG_OPTIONS" ]		&&  LCWA_DEBUG_OPTIONS="--conf ${LCWA_CONFFILE} --time 1 --verbose --nowait --testdb"
 [ -z "$LCWA_EXEC_ARGS" ] 			&&  LCWA_EXEC_ARGS="$LCWA_OPTIONS"
 [ -z "$LCWA_EXEC_ARGS_DEBUG" ] 		&&  LCWA_EXEC_ARGS_DEBUG="--adebug \$LCWA_OPTIONS"
                                                             

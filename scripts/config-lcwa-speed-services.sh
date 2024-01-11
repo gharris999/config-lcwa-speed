@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20220913.162808
+SCRIPT_VERSION=20231226.141141
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -212,6 +212,45 @@ lcwa_speed_unit_file_create(){
 	[ $DEBUG -gt 2 ] && debug_cat "$LUNIT_FILE"
 	
 	#~ systemd_unit_enable "${LCWA_SERVICE}.service"
+
+	LUNIT_FILE="/lib/systemd/system/${LCWA_SERVICE}-debug.service"
+
+	[ $TEST -gt 2 ] && LUNIT_FILE="./${LCWA_SERVICE}-debug.service"
+
+	[ ! -f "$LUNIT_FILE" ] && LACTION='Creating' || LACTION='Overwriting'
+	[ $QUIET -lt 1 ] && error_echo "${LACTION} ${LUNIT_FILE}.."
+	
+	[ $TEST -lt 1 ] && cat >"$LUNIT_FILE" <<-SYSTEMD_SCR2;
+	## ${LUNIT_FILE} -- $(date)
+	## systemd service unit file
+
+	[Unit]
+	Description=$LCWA_DESC debug mode.
+	After=network-online.target
+
+	[Service]
+	#UMask=002
+	Nice=-19
+	LimitRTPRIO=infinity
+	LimitMEMLOCK=infinity
+	EnvironmentFile=${LCWA_ENVFILE}
+	RuntimeDirectory=${LCWA_SERVICE}
+	Type=simple
+	User=${LCWA_USER}
+	Group=${LCWA_GROUP}
+	ExecStart=${LCWA_DAEMON} \$LCWA_DEBUG_OPTIONS
+	RestartSec=5
+	Restart=on-failure
+	StandardOutput=append:${LCWA_LOGDIR}/${LCWA_SERVICE}-debug.log
+	StandardError=append:${LCWA_LOGDIR}/${LCWA_SERVICE}-debug-error.log
+
+	[Install]
+	WantedBy=multi-user.target
+
+	SYSTEMD_SCR2
+	
+	[ $DEBUG -gt 2 ] && debug_cat "$LUNIT_FILE"
+
 	
 	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 

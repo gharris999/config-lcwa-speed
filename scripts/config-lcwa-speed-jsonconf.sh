@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script creating the config.json file required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 ######################################################################################################
-SCRIPT_VERSION=20220305.112242
+SCRIPT_VERSION=20231222.094429
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -512,7 +512,7 @@ config_json_create(){
 	  "Control": {
 		"runmode": "${LRUN_MODE}",
 		"debug": false,
-		"cryptofile": "${LCONF_DIR}/LCWA_d.txt",
+		"cryptofile": "$LCWA_DB_KEYFILE",
 		"click": "1",
 		"random": false
 	  },
@@ -528,7 +528,7 @@ config_json_create(){
 	  },
 	  "Speedtest": {
 		"serverip": "63.229.162.245",
-		"serverid": 18002,
+		"serverid": 10056,
 		"time_window": 10,
 		"latency_ip": "65.19.14.51"
 	  }
@@ -549,9 +549,39 @@ config_json_create(){
 }
 
 ###############################################################################
-# db_keyfile_install() -- Creates the LCWA_d.txt dropbox key file from an
-#                         encrypted hash.  Prompts for LCWA canonical password.
+# db_keyfile_install() -- Creates the LCWA_a.txt dropbox persistent token file
+#                         from an encrypted hashshed file.
 ###############################################################################
+
+db_tokenfile_install(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LTOKEN_FILE="${1:-${LCWA_DB_KEYFILE}}"
+	local LENC_FILE="${LCWA_REPO_LOCAL}/src/LCWA.enc"
+	local LKEY_FILE="${LCWA_REPO_LOCAL}/scripts/LCWA_translate"
+
+	#LCWA_REPO_LOCAL="/usr/local/share/lcwa-speed/speedtest"
+	[ -z "$LTOKEN_FILE" ] && LTOKEN_FILE="${LCWA_CONFDIR}/LCWA_a.txt"
+
+	if [[ -f "$LTOKEN_FILE" ]] && [[ $FORCE -lt 1 ]]; then
+		error_echo "Dropbox persistent token file already installed.  Use --force to reinstall."
+		return 0
+	fi
+
+	error_echo "========================================================================================="
+	error_echo "Creating dropbox persistent token file ${LTOKEN_FILE} from encrypted source."
+	error_echo " "
+	openssl enc -d -base64 -in "$LENC_FILE" -out "$LTOKEN_FILE" -kfile "$LKEY_FILE"
+	if [ -f "$LTOKEN_FILE" ] && [ $(grep -c -E '(APP_KEY|APP_SECRET|REFRESH_TOKEN)' "$LTOKEN_FILE") -eq 3 ]; then
+		error_echo "Token file created successfully."
+	else
+		error_echo "Error: Could not create token file ${LTOKEN_FILE}"
+	fi
+	error_echo " "
+	error_echo "========================================================================================="
+	
+
+	debug_pause "${FUNCNAME}: ${LINENO}"
+}
 
 db_keyfile_install(){
 	debug_echo "${FUNCNAME}( $@ )"
@@ -571,6 +601,7 @@ db_keyfile_install(){
 
 	debug_pause "${FUNCNAME}: ${LINENO}"
 }
+
 
 db_keyfile_remove(){
 	debug_echo "${FUNCNAME}( $@ )"
@@ -745,7 +776,7 @@ json_modify "$LCWA_CONFFILE" ".ClusterControl.${MY_HOST}.nondefault.iperf_durati
 # View the differences between Andi's original and ours..
 [ $DEBUG -gt 0 ] && diff -ZbwB "$LCWA_CONFFILE" "$INST_REPO_CONFIG_JSON"
 
-db_keyfile_install
+db_tokenfile_install "$LCWA_DB_KEYFILE"
 
 error_echo "${SCRIPT_NAME} ${@} done"
 

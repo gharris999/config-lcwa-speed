@@ -12,6 +12,7 @@ src/
 pppoe/
 speedfiles/
 
+scripts/bak
 scripts/makelinks.sh
 scripts/lcwa-speed
 scripts/lcwa-speed.org
