@@ -2,7 +2,7 @@
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20220904.081140
+SCRIPT_VERSION=20240111.214749
 
 INST_NAME='lcwa-speed'
 SERVICE_NAME=
@@ -88,6 +88,11 @@ debug_echo(){
 }
 
 
+error_date_msg(){
+	DATE=$(timestamp_get_iso8601)
+	echo "[${DATE}] " "$@" 1>&2;
+}
+
 date_msg(){
 	DATE=$(date '+%F %H:%M:%S.%N')
 	DATE=${DATE#??}
@@ -96,7 +101,7 @@ date_msg(){
 }
 
 log_msg(){
-	error_echo "$@"
+	error_date_msg "$@"
 	[ $LOG -gt 0 ] && date_msg "$@" >> "$LCWA_VCLOG"
 }
 
