@@ -2,7 +2,7 @@
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240111.214749
+SCRIPT_VERSION=20240111.222514
 
 INST_NAME='lcwa-speed'
 SERVICE_NAME=
@@ -108,6 +108,13 @@ log_msg(){
 log_clear(){
 	error_echo "$@"
 	[ $LOG -gt 0 ] && date_msg "$@" > "$LCWA_VCLOG"
+}
+
+######################################################################################################
+# timestamp_get_iso8601() -- Get a second granularity local TZ timestamp in ISO-8601 format..
+######################################################################################################
+function timestamp_get_iso8601(){
+	echo "$(date --iso-8601=s)"
 }
 
 ######################################################################################################
