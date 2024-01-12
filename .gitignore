@@ -6,11 +6,12 @@ bak/
 config/
 configs/
 default/
-rpi/
-test_bins/
-src/
+env/
 pppoe/
+rpi/
+src/
 speedfiles/
+test_bins/
 
 scripts/bak
 scripts/makelinks.sh

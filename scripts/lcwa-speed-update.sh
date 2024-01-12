@@ -2,7 +2,7 @@
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240111.222514
+SCRIPT_VERSION=20240112.085655
 
 INST_NAME='lcwa-speed'
 SERVICE_NAME=
@@ -85,6 +85,12 @@ debug_cat(){
 
 debug_echo(){
 	[ $DEBUG -gt 0 ] && echo "$@" 1>&2;
+}
+
+debug_log_msg(){
+	[ $DEBUG -lt 1 ] && return 1
+	error_date_msg "$@"
+	[ $LOG -gt 0 ] && date_msg "$@" >> "$LCWA_VCLOG"
 }
 
 
@@ -277,6 +283,14 @@ sbin_zip_update(){
 	
 }
 
+update_service_name_get(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LOUR_NAME="$(systemctl status $$ | grep -m1 '.service' | awk '{print $2}')"
+
+	
+
+}
+
 
 service_name_get(){
 	debug_echo "${FUNCNAME}( $@ )"
@@ -284,15 +298,15 @@ service_name_get(){
 	local LOUR_NAME=
 	local LFOUND_NAME=
 	
-	debug_echo "Searching for ${LSEARCH_NAME} service.."
+	debug_log_msg "Searching for ${LSEARCH_NAME} service.."
 	
 	
 	local LOUR_NAME="$(ps -p $$ -o pid=,unit=,cmd= | awk '{ print $2 }')"
 	
-	# If we're not running as a systemd service..i.e. just running the script..
+	# If we're not running as a systemd service..i.e. just running the script, default to 
 	[ $( echo "$OUR_NAME" | grep -c '.service') -lt 1 ] && LOUR_NAME="${INST_NAME}-update.service"
 	
-	[ $DEBUG -gt 1 ] && log_msg "This Update Service: ${LOUR_NAME}.."
+	debug_log_msg "This Update Service: ${LOUR_NAME}.."
 	
 	
 	# See if the service is running..
@@ -301,7 +315,7 @@ service_name_get(){
 	
 	[ $( echo "$LFOUND_NAME" | grep -c '.service') -lt 1 ] && LFOUND_NAME=""
 
-	# This finds enabled but stopped services..
+	# This finds enabled but stopped services and filters out this update service..
 	[ -z "$LFOUND_NAME" ] && LFOUND_NAME="$(systemctl list-units --type=service "${LSEARCH_NAME}*" --all --no-legend | grep -v "$LOUR_NAME" | awk '{ print $1 }')"
 	
 	if [ -z "$LFOUND_NAME" ]; then
