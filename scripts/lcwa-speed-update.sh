@@ -2,9 +2,10 @@
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240112.085655
+SCRIPT_VERSION=20240114.233952
 
 INST_NAME='lcwa-speed'
+LCWA_ENVFILE="$INST_NAME"
 SERVICE_NAME=
 
 SCRIPT="$(readlink -f "$0")"
@@ -20,7 +21,16 @@ LOG_CLEAR=0
 
 CLUSTER_UPDATE=0
 
-NO_UPDATES=1
+#~ LCWA_NOUPDATES
+NO_UPDATES=0
+
+#~ LCWA_REPO_UPDATE
+#~ LCWA_SUPREPO_UPDATE
+
+FORCE_UPDATES=0
+
+
+
 NO_PATCH=1
 SERVICES_UPDATE=0
 SBIN_UPDATE=0
@@ -283,40 +293,48 @@ sbin_zip_update(){
 	
 }
 
-update_service_name_get(){
-	debug_echo "${FUNCNAME}( $@ )"
-	local LOUR_NAME="$(systemctl status $$ | grep -m1 '.service' | awk '{print $2}')"
-
-	
-
-}
-
-
+########################################################################
+# service_name_get ( $SERVICE_NAME )
+#   Returns the name of the service to update.
+#   Helps differentiate between *this* running service and the service
+#   we need to update.  Will return ${SERVICE-NAME}-debug.service if it's
+#   running or enabled and $SERVICE_NAME is not running or enabled.
+########################################################################
 service_name_get(){
 	debug_echo "${FUNCNAME}( $@ )"
-	local LSEARCH_NAME="$1"
+	local LSEARCH_NAME="${1:-$INST_NAME}"
 	local LOUR_NAME=
 	local LFOUND_NAME=
+
+	local LOUR_NAME="$(basename $0)"
+	LOUR_NAME="${LOUR_NAME%.*}.service"
+
+    # Another way to get this running service name from our process ID:
+    #~ systemctl status $$ --no-legend -n 0 | head -n1 | awk '{print $2}'
+
+	# Does update service name match our process ID unit name?
+	if [ "$LOUR_NAME" != "$(ps -p $$ -o pid=,unit=,cmd= | awk '{ print $2 }')" ]; then
+		# If not, force our update service name to match our service-to-update name + '-update.service'
+		LOUR_NAME="${LSEARCH_NAME%.*}-update.service"
+	fi
 	
 	debug_log_msg "Searching for ${LSEARCH_NAME} service.."
 	
-	
-	local LOUR_NAME="$(ps -p $$ -o pid=,unit=,cmd= | awk '{ print $2 }')"
-	
-	# If we're not running as a systemd service..i.e. just running the script, default to 
-	[ $( echo "$OUR_NAME" | grep -c '.service') -lt 1 ] && LOUR_NAME="${INST_NAME}-update.service"
-	
-	debug_log_msg "This Update Service: ${LOUR_NAME}.."
-	
-	
-	# See if the service is running..
-	
-	LFOUND_NAME="$(ps -e -o pid,unit,cmd | grep -v "${LOUR_NAME}\|grep" | grep -m1 "$LSEARCH_NAME" | awk '{ print $2 }')"
-	
-	[ $( echo "$LFOUND_NAME" | grep -c '.service') -lt 1 ] && LFOUND_NAME=""
+    # This finds our service to update if it's running.  Potentially finds ${INST_NAME}-debug.service it it's ruuning..
+    LFOUND_NAME="$(systemctl list-units --type=service "${LSEARCH_NAME}*" --all --no-legend --state=running | sort -r | grep -m1 -v "$LOUR_NAME" | awk '{print $1}')"
+    [ ! -z "$LFOUND_NAME" ] && debug_log_msg "Found ${LFOUND_NAME} on 1st attempt.."
 
-	# This finds enabled but stopped services and filters out this update service..
-	[ -z "$LFOUND_NAME" ] && LFOUND_NAME="$(systemctl list-units --type=service "${LSEARCH_NAME}*" --all --no-legend | grep -v "$LOUR_NAME" | awk '{ print $1 }')"
+	# This finds our service if it's enabled but stopped, filtering out this update service..
+	if [ -z "$LFOUND_NAME" ]; then
+		LFOUND_NAME="$(systemctl list-units --type=service "${LSEARCH_NAME}*" --all --no-legend --state=dead | sort -r | grep -m1 -v "$LOUR_NAME" | awk '{ print $1 }')"
+        [ ! -z "$LFOUND_NAME" ] && debug_log_msg "Found ${LFOUND_NAME} on 2nd attempt.."
+    fi
+
+	# This finds disabled services and filters out this update service..but only if forcing..
+	if [ -z "$LFOUND_NAME" ] && [ $FORCE -gt 0 ]; then
+		LFOUND_NAME="$(systemctl list-unit-files --type=service "${LSEARCH_NAME}*" --all --no-legend --state=disabled | sort -r | grep -m1 -v "$LOUR_NAME" | awk '{ print $1 }')"
+        [ ! -z "$LFOUND_NAME" ] && debug_log_msg "Found ${LFOUND_NAME} on 3rd attempt.."
+    fi
 	
 	if [ -z "$LFOUND_NAME" ]; then
 		log_msg "${LSEARCH_NAME} service not found."
@@ -324,11 +342,10 @@ service_name_get(){
 		return 1
 	fi
 
-	debug_echo "Found ${LFOUND_NAME}.."
+	debug_log_msg "Found ${LFOUND_NAME}.."
 
 	echo "$LFOUND_NAME"
 }
-
 
 service_stop() {
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
@@ -336,7 +353,7 @@ service_stop() {
 
 	log_msg "Stopping ${LSERVICE}.."
 
-	[ $TEST -lt 1 ] && systemctl stop "${LSERVICE}" >/dev/null 2>&1
+	[ $TEST -lt 2 ] && systemctl stop "${LSERVICE}" >/dev/null 2>&1
 
 	sleep 2
 
@@ -345,7 +362,7 @@ service_stop() {
 
 	if [ ! -z "$LLCWA_PID" ]; then
 		log_msg "Stopping ${LSERVICE_NAME} failed.  Killing ${LLCWA_PID} instead.."
-		[ $TEST -lt 1 ] && kill -9 "$LLCWA_PID"
+		[ $TEST -lt 2 ] && kill -9 "$LLCWA_PID"
 	fi
 
 	return $?
@@ -374,13 +391,46 @@ service_start() {
 	local LSERVICE="${1:=${INST_NAME}}"
 	log_msg "Starting ${LSERVICE}.."
 
-	#~ [ $TEST -lt 1 ] && systemctl start "${LSERVICE}" >/dev/null 2>&1
-	[ $TEST -lt 1 ] && systemctl restart "${LSERVICE}" >/dev/null 2>&1
+	[ $TEST -lt 2 ] && systemctl restart "${LSERVICE}" >/dev/null 2>&1
 	
 	service_status "$LSERVICE"
 
 	return $?
 }
+
+########################################################################
+# git_is_repo() -- returns 0 if directory is a git repository, 1 if not
+########################################################################
+git_is_repo(){
+    debug_echo "${FUNCNAME}($@)"
+    local LLOCAL_REPO="${1:-"$(pwd)"}"
+    local LRET=254
+
+    # Check to make sure that this is a git repo and belongs to us!
+    # origin  https://github.com/gharris999/LCWA.git (push)
+    if [ -d "${LLOCAL_REPO}/.git" ]; then
+        pushd "$LLOCAL_REPO" >/dev/null
+        # Get the remote fetch repo
+        if [ $(git remote get-url origin 2>/dev/null | wc -l) -gt 0 ]; then
+            debug_log_msg "${FUNCNAME[1]}: ${LLOCAL_REPO} is a git repository."
+            LRET=0
+        fi
+        popd >/dev/null
+    fi
+
+    if [ $LRET -gt 0 ]; then
+		log_msg "${SCRIPT_NAME}::${FUNCNAME[0]}() error: ${LLOCAL_REPO} is not a git repository."
+		echo ""
+	else
+		# Return fully qualified path
+		readlink -f "$LLOCAL_REPO"
+	fi
+
+    debug_echo "${FUNCNAME}($@) returning ${LRET}"
+    return $LRET
+}
+
+
 
 
 
@@ -391,23 +441,39 @@ git_in_repo(){
 	local LLOCAL_REPO="$1"
 	if [ $(pwd) != "$LLOCAL_REPO" ]; then
 		log_msg "Error: ${LLOCAL_REPO} not found."
-		return 128
+		log_msg "${SCRIPT_NAME} must exit."
+		exit 254
 	fi
 }
 
 #---------------------------------------------------------------------------
-# Discard any local changes from the repo..
+# Discard any local changes from the repo, sending the git output to stderr
 git_clean(){
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
 	local LLOCAL_REPO="$1"
-	cd "$LLOCAL_REPO" && git_in_repo "$LLOCAL_REPO"
-	log_msg "Cleaning ${LLOCAL_REPO}"
-	if [ -d './.git' ]; then
-		[ $TEST -lt 1 ] && git reset --hard
-		[ $TEST -lt 1 ] && git clean -fd
-	elif [ -d './.svn' ]; then
-		[ $TEST -lt 1 ] && svn revert -R .
+	local LRET=1
+	pushd "$LLOCAL_REPO" >/dev/null && git_in_repo "$LLOCAL_REPO"
+	if [ $TEST -lt 1 ]; then
+		log_msg "Cleaning ${LLOCAL_REPO}"
+		#~ git reset --hard | tee >(cat 1>&2)
+		git reset --hard 1>&2
+		LRET=${PIPESTATUS[0]}
+		if [ $LRET -lt 1 ]; then
+			#~ git clean -fd | tee >(cat 1>&2)
+			git clean -fd 1>&2
+			LRET=${PIPESTATUS[0]}
+		fi
+	else
+		# Test mode
+		log_msg "Test Cleaning ${LLOCAL_REPO}"
+		#~ git diff -R HEAD | tee >(cat 1>&2)
+		git diff -R HEAD 1>&2
+		#~ git clean -fd --dry-run | tee >(cat 1>&2)
+		git clean -fd --dry-run 1>&2
+		LRET=0
 	fi
+	popd >/dev/null
+	return $LRET
 }
 
 #---------------------------------------------------------------------------
@@ -415,46 +481,150 @@ git_clean(){
 git_update(){
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
 	local LLOCAL_REPO="$1"
-	cd "$LLOCAL_REPO" && git_in_repo "$LLOCAL_REPO" 
-	log_msg "Updating ${LLOCAL_REPO}"
-	if [ -d './.git' ]; then
-		[ $TEST -lt 1 ] && git pull | tee -a "$LCWA_VCLOG"
-	elif [ -d './.svn' ]; then
-		[ $TEST -lt 1 ] && svn up | tee -a "$LCWA_VCLOG"
+	local LRET=1
+	pushd "$LLOCAL_REPO" >/dev/null && git_in_repo "$LLOCAL_REPO" 
+	if [ $TEST -lt 1 ]; then
+		log_msg "Updating ${LLOCAL_REPO}"
+		#~ git pull | tee -a "$LCWA_VCLOG" | tee >(cat 1>&2)
+		git pull 1>&2
+		LRET=${PIPESTATUS[0]}
+	else
+		log_msg "Test Updating ${LLOCAL_REPO}"
+		#~ git pull --dry-run | tee -a "$LCWA_VCLOG" | tee >(cat 1>&2)
+		git pull --dry-run 1>&2
+		LRET=0
 	fi
-	return $?
+			
+	popd >/dev/null
+	return $LRET
 }
+
+#---------------------------------------------------------------------------
+# Update the repo..
 
 git_update_do() {
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
 	local LLOCAL_REPO="$1"
-	git_clean "$LLOCAL_REPO" 
-	git_update "$LLOCAL_REPO" && status=0 || status=$?
-	if [ $status -eq 0 ]; then
-		log_msg "${LLOCAL_REPO} has been updated."
-	else
-		log_msg "Error updating ${LLOCAL_REPO}."
+	local LLOCAL_REPO_NAME=
+	local LRET=1
+
+	LLOCAL_REPO="$(git_is_repo "$LLOCAL_REPO")"
+	LRET=$?
+
+	LLOCAL_REPO_NAME="$(basename "$LLOCAL_REPO")"
+	
+
+	if [ $LRET -lt 1 ]; then
+		git_clean "$LLOCAL_REPO" || LRET=1
+		[ $LRET -lt 1 ] && git_update "$LLOCAL_REPO"
+		LRET=$?
 	fi
+
+	if [ $LRET -lt 1 ]; then
+		log_msg "${LLOCAL_REPO_NAME} has been updated."
+	else
+		log_msg "Error updating ${LLOCAL_REPO_NAME}."
+	fi
+
+	return $LRET
 }
 
 git_check_up_to_date(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
+	debug_echo "${FUNCNAME}( $@ )"
 	local LLOCAL_REPO="$1"
+	local LLOCAL_REPO_NAME=
+	local LREMOTE_REPO=
+	local LREMOTE_BRANCH=
+	local LLOCAL_BRANCH=
+	local LSTATUS=
+	local LSTATE=
+	local LMSG=
+	local LRET=254
+
+	# Fully qualifies the repo dir
+	LLOCAL_REPO="$(git_is_repo "$LLOCAL_REPO")"
+	LRET=$?
 	
-	cd "$LLOCAL_REPO" && git_in_repo "$LLOCAL_REPO" 
-	if [ -d './.git' ]; then
-		# http://stackoverflow.com/questions/3258243/git-check-if-pull-needed
-		log_msg "Checking ${LLOCAL_REPO} to see if update is needed.."
-		if [ $($TIMEOUT_BIN $PROC_TIMEOUT git remote -v update 2>&1 | grep -c "\[up to date\]") -gt 0 ]; then
-			log_msg "Local repository ${LLOCAL_REPO} is up to date."
-			return 0
-		else
-			log_msg "Local repository ${LLOCAL_REPO} requires update."
-			git_update_do "$LLOCAL_REPO"
-			return 1
-		fi
+	if [ $LRET -gt 0 ]; then
+		return $LRET
 	fi
+
+	LLOCAL_REPO_NAME="$(basename "$LLOCAL_REPO")"
+
+	pushd "$LLOCAL_REPO" >/dev/null
+
+	# Branch we have checked out..
+	LLOCAL_BRANCH="$(git branch | grep '^\*' | awk '{print $2}')"
+
+	# This is the remote fetch repo..
+	LREMOTE_REPO="$(git remote get-url origin)"
+	LREMOTE_BRANCH="$(git branch -r | grep -E "^\s+origin/${LLOCAL_BRANCH}\$" | xargs)"
+
+	if [ $DEBUG -gt 0 ]; then
+		error_echo ' '
+		error_echo ' '
+		error_echo "LLOCAL_REPO_NAME == ${LLOCAL_REPO_NAME}"
+		error_echo "LLOCAL_REPO      == ${LLOCAL_REPO}"
+		error_echo "LLOCAL_BRANCH    == ${LLOCAL_BRANCH}"
+		error_echo ' '
+		error_echo "LREMOTE_REPO     == ${LREMOTE_REPO}"
+		error_echo "LREMOTE_BRANCH   == ${LREMOTE_BRANCH}"
+		error_echo ' '
+		error_echo ' '
+	fi
+
+	[ $QUIET -lt 1 ] && log_msg "Checking ${LLOCAL_REPO_NAME} :: ${LLOCAL_BRANCH} vs ${LREMOTE_REPO} :: ${LREMOTE_BRANCH}"
+	[ $QUIET -lt 1 ] && log_msg "...to see if update is needed..."
+
+	if [ $VERBOSE -gt 0 ]; then
+		error_echo ' '
+		$TIMEOUT_BIN $PROC_TIMEOUT git remote -v update 1>&2
+		error_echo ' '
+		$TIMEOUT_BIN $PROC_TIMEOUT git status -uno -u 1>&2
+		error_echo ' '
+	else
+		$TIMEOUT_BIN $PROC_TIMEOUT git remote update >/dev/null
+	fi
+
+	LSTATUS="$($TIMEOUT_BIN $PROC_TIMEOUT git status -uno -u | xargs)"
+
+	popd >/dev/null
+
+	if [ $(echo "$LSTATUS" | grep -c -E "dubious ownership") -gt 0 ]; then
+		LSTATUS='unknown'
+		LMSG="Repo ${LLOCAL_REPO_NAME}, branch ${LLOCAL_BRANCH} has dubious owenership."
+		LRET=128
+	elif [ $(echo "$LSTATUS" | grep -c -E "On branch ${LLOCAL_BRANCH} .* Untracked files:") -gt 0 ]; then
+		LSTATUS='untracked'
+		LMSG="Repo ${LLOCAL_REPO_NAME}, branch ${LLOCAL_BRANCH} has untracked files. Use 'git add .' to track them."
+		LRET=127
+	elif [ $(echo "$LSTATUS" | grep -c -E "On branch ${LLOCAL_BRANCH} .* Changes not staged for commit:") -gt 0 ]; then
+		LSTATUS='uncommitted'
+		LMSG="Repo ${LLOCAL_REPO_NAME}, branch ${LLOCAL_BRANCH} has uncommitted files. Use 'git add .' and 'git commit'"
+		LRET=126
+	elif [ $(echo "$LSTATUS" | grep -c -E "On branch ${LLOCAL_BRANCH} Your branch is ahead ${LREMOTE_BRANCH}") -gt 0 ]; then
+		LSTATUS='ahead'
+		LMSG="Repo ${LLOCAL_REPO_NAME}, branch ${LLOCAL_BRANCH} is ahead of ${LREMOTE_BRANCH}. Use 'git push'"
+		LRET=2
+	elif [ $(echo "$LSTATUS" | grep -c -E "On branch ${LLOCAL_BRANCH} Your branch is behind ${LREMOTE_BRANCH}") -gt 0 ]; then
+		LSTATUS='behind'
+		LMSG="Repo ${LLOCAL_REPO_NAME}, branch ${LLOCAL_BRANCH} is behind ${LREMOTE_BRANCH}. Use 'git pull'"
+		LRET=1
+	elif [ $(echo "$LSTATUS" | grep -c -E "On branch ${LLOCAL_BRANCH} Your branch is up to date with ${LREMOTE_BRANCH}") -gt 0 ]; then
+		LSTATUS='up-to-date'
+		LMSG="Repo ${LLOCAL_REPO_NAME}, branch ${LLOCAL_BRANCH} is up to date with ${LREMOTE_BRANCH}."
+		LRET=0
+	else
+		LSTATUS='not-determined'
+		LRET=254
+	fi
+
+	[ $QUIET -lt 1 ] && log_msg "Repo ${LLOCAL_REPO_NAME} status is ${LSTATUS} -- ${LRET}"
+	[ $VERBOSE -gt 0 ] && log_msg "$LMSG"
+
+	return $LRET
 }
+
 
 ######################################################################################################
 # utility_scripts_install( SUP_REPO_SCRIPT_DIR ) Installs the utility scripts to /usr/local/sbin
@@ -682,12 +852,12 @@ test,
 log,
 log-clear,
 clear-log,
+env-file:,
 no-update,
 no-patch,
 cluster,
 no-cluster,
 services-update,
-no-servcies-update,
 sbin-update,
 os-update"
 
@@ -720,8 +890,9 @@ while [ $# -gt 0 ]; do
 		-v|--verbose)		# Display additional message output.
 			((VERBOSE+=1))
 			;;
-		-f|--force)		# Forces reinstall of jq commandline JSON processor
+		-f|--force)		# Forces updates
 			FORCE=1
+			FORCE_UPDATES=1
 			;;
 		-t|--test)		# Test mode -- -tt will create json in ${SCRIPT_DIR}
 			((TEST+=1))
@@ -739,8 +910,9 @@ while [ $# -gt 0 ]; do
 		--no-cluster)
 			CLUSTER_UPDATE=0
 			;;
-		--no-update)
+		--no-update)	# disables updating.  Just stops and restarts the service.
 			NO_UPDATES=1
+			FORCE_UPDATES=0
 			;;
 		--no-patch)
 			NO_PATCH=1
@@ -748,14 +920,16 @@ while [ $# -gt 0 ]; do
 		--services-update)
 			SERVICES_UPDATE=1
 			;;
-		--no-services-update)
-			SERVICES_UPDATE=0
-			;;
 		--sbin-update)	# Updates scripts in /usr/local/sbin from a remote zip archive
 			SBIN_UPDATE=1
 			;;
 		--os-update)	# Performs an apt-get dist-upgrade
 			OS_UPDATE=1
+			;;
+		--env-file)	# =NAME -- Read a specific env file to get the locations for the install.
+			shift
+			LCWA_ENVFILE="$1"
+			[ -f "$LCWA_ENVFILE" ] && LCWA_ENVFILE="$(readlink -f "$LCWA_ENVFILE")"
 			;;
 		*)
 			log_msg "Error: unrecognized option ${1}."
@@ -767,7 +941,8 @@ while [ $# -gt 0 ]; do
 done
 
 # Get our environmental variables..
-env_file_read
+env_file_read "$LCWA_ENVFILE"
+[ $? -gt 0 ] && error_exit "${SCRIPT_NAME} must exit."
 
 [ $LOG_CLEAR -gt 0 ] && log_clear "# $(date)"
 
@@ -775,6 +950,21 @@ log_msg "#######################################################################
 log_msg "${SCRIPT_NAME} ${ARGS}"
 
 SERVICE_NAME="$(service_name_get "$INST_NAME")"
+
+if [ $DEBUG -gt 0 ]; then
+	error_echo ' '
+	error_echo "              FORCE == ${FORCE}"
+	error_echo "               TEST == ${TEST}"
+	error_echo ' '
+	error_echo "LCWA_REPO_UPDATE    == ${LCWA_REPO_UPDATE}"
+	error_echo "LCWA_SUPREPO_UPDATE == ${LCWA_SUPREPO_UPDATE}"
+	error_echo "SERVICES_UPDATE     == ${SERVICES_UPDATE}"
+	error_echo "SBIN_UPDATE         == ${SBIN_UPDATE}"
+	error_echo "OS_UPDATE           == ${OS_UPDATE}"
+	error_echo "LCWA_REPO_PATCH     == ${LCWA_REPO_PATCH}"
+	error_echo "CLUSTER_UPDATE      == ${CLUSTER_UPDATE}"
+	error_echo ' '
+fi
 
 # Fall back..
 if [ -z "$SERVICE_NAME" ]; then
@@ -791,15 +981,16 @@ fi
 
 service_stop "$SERVICE_NAME"
 
-if [ $NO_UPDATES -gt 0 ]; then
-	log_msg "Updates for ${SERVICE_NAME} disabled.  Restarting ${SERVICE_NAME} only."
+#~ if [ $NO_UPDATES -gt 0 ]; then
+if [ $FORCE -lt 1 ] && [ $LCWA_NOUPDATES -gt 0 ]; then
+	log_msg "Updates for ${SERVICE_NAME} disabled.  Restarting ${SERVICE_NAME}."
 else
-
 	# Selectivly perform updates..
 
 	# Check and update the speedtest python code repo..
 	if [ $LCWA_REPO_UPDATE -gt 0 ]; then
 		git_check_up_to_date "$LCWA_REPO_LOCAL"
+		[ $? -eq 1 ] && git_update_do "$LCWA_REPO_LOCAL"
 	fi
 	
 	# Update this update repo..
@@ -807,6 +998,7 @@ else
 		# Check & update the suplimental repo (contains this script)
 		BEFORE_VER=$(script_version_get "${LCWA_SUPREPO_LOCAL}/config-${INST_NAME}.sh")
 		git_check_up_to_date "$LCWA_SUPREPO_LOCAL"
+		[ $? -eq 1 ] && git_update_do "$LCWA_SUPREPO_LOCAL"
 
 		# Service version is: $LCWA_VERSION
 		# See if we need to update the service installation
@@ -829,7 +1021,7 @@ else
 	fi
 	
 	# Patch the repo with our local patch files..
-	if [ $LCWA_REPO_PATCH -gt 1 ] && [ $NO_PATCH-lt 1 ]; then
+	if [ $LCWA_REPO_PATCH -gt 0 ] && [ $NO_PATCH -lt 1 ]; then
 		PATCHSCRIPT="${LCWA_REPO_LOCAL}_patches/src/apply.sh"
 		log_msg "Checking for ${PATCHSCRIPT} patch script."
 
