@@ -2,7 +2,7 @@
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240114.233952
+SCRIPT_VERSION=20240115.092418
 
 INST_NAME='lcwa-speed'
 LCWA_ENVFILE="$INST_NAME"
@@ -983,7 +983,7 @@ service_stop "$SERVICE_NAME"
 
 #~ if [ $NO_UPDATES -gt 0 ]; then
 if [ $FORCE -lt 1 ] && [ $LCWA_NOUPDATES -gt 0 ]; then
-	log_msg "Updates for ${SERVICE_NAME} disabled.  Restarting ${SERVICE_NAME}."
+	log_msg "Repo updates for ${SERVICE_NAME} disabled in ${LCWA_ENVFILE}.  Restarting ${SERVICE_NAME}."
 else
 	# Selectivly perform updates..
 
@@ -991,6 +991,8 @@ else
 	if [ $LCWA_REPO_UPDATE -gt 0 ]; then
 		git_check_up_to_date "$LCWA_REPO_LOCAL"
 		[ $? -eq 1 ] && git_update_do "$LCWA_REPO_LOCAL"
+	else
+		log_msg "Repo updates to ${LCWA_REPO_LOCAL} blocked in ${LCWA_ENVFILE}."
 	fi
 	
 	# Update this update repo..
@@ -1003,6 +1005,8 @@ else
 		# Service version is: $LCWA_VERSION
 		# See if we need to update the service installation
 		service_update_check "$LCWA_SUPREPO_LOCAL" "$BEFORE_VER"
+	else
+		log_msg "Repo updates to ${LCWA_SUPREPO_LOCAL} blocked in ${LCWA_ENVFILE}."
 	fi
 	
 	# See if we need to update this update script..
