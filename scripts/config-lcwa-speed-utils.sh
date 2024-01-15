@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script for installing basic script utilities to /usr/local/sbin
 ######################################################################################################
-SCRIPT_VERSION=20220227.133855
+SCRIPT_VERSION=20240115.000507
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -104,9 +104,9 @@ rclocal_create(){
 utility_scripts_name(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local LSCRIPT_DIR="${1:-${SCRIPT_DIR}}"
-	echo	"${LSCRIPT_DIR}/../../instsrv_functions.sh" \
-			"${LSCRIPT_DIR}/../instsrv_functions.sh" \
-			"${LSCRIPT_DIR}/./instsrv_functions.sh" \
+	echo	"../../instsrv_functions.sh" \
+			"../instsrv_functions.sh" \
+			"./instsrv_functions.sh" \
 			"${LSCRIPT_DIR}/config-ookla-speedtest.sh" \
 			$(find "$LSCRIPT_DIR" -maxdepth 1 -name '*lcwa*' -printf '%f\n' | grep -v -E '[\./]+bak' | sort)
 }
@@ -141,10 +141,17 @@ utility_scripts_install(){
 
 	for LSCRIPT in $(utility_scripts_name)
 	do
+		[ $VERBOSE -gt 1 ] && error_echo "$LSCRIPT"
+
 		LSOURCE="$(readlink -f "${LSCRIPT_DIR}/${LSCRIPT}")"
+
+		if [ -z "$LSOURCE" ] || [ ! -f "$LSOURCE" ]; then
+			continue
+		fi
+		
 		LTARGET="${LTARGET_DIR}/$(basename "$LSCRIPT")"
 		
-		[ $VERBOSE -gt 0 ] && error_echo "$LSOURCE"
+		[ $VERBOSE -gt 1 ] && error_echo "$LSOURCE"
 		
 		# Only copy shell script files..
 		if [ $(file "$LSOURCE" | grep -c 'shell script') -lt 1 ]; then
