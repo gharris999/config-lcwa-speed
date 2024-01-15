@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script for installing basic script utilities to /usr/local/sbin
 ######################################################################################################
-SCRIPT_VERSION=20240115.000507
+SCRIPT_VERSION=20240115.085852
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -107,7 +107,8 @@ utility_scripts_name(){
 	echo	"../../instsrv_functions.sh" \
 			"../instsrv_functions.sh" \
 			"./instsrv_functions.sh" \
-			"${LSCRIPT_DIR}/config-ookla-speedtest.sh" \
+			"../config-lcwa-speed.sh" \
+			"./config-ookla-speedtest.sh" \
 			$(find "$LSCRIPT_DIR" -maxdepth 1 -name '*lcwa*' -printf '%f\n' | grep -v -E '[\./]+bak' | sort)
 }
 
@@ -149,10 +150,15 @@ utility_scripts_install(){
 			continue
 		fi
 		
-		LTARGET="${LTARGET_DIR}/$(basename "$LSCRIPT")"
-		
 		[ $VERBOSE -gt 1 ] && error_echo "$LSOURCE"
 		
+		LTARGET="${LTARGET_DIR}/$(basename "$LSCRIPT")"
+
+		# Skip overwriting newer files..
+		if [ -f "$LTARGET" ] && [ ! "$LSOURCE" -ot "$LTARGET" ]; then
+			[ $FORCE -lt 1 ] && continue
+		fi
+
 		# Only copy shell script files..
 		if [ $(file "$LSOURCE" | grep -c 'shell script') -lt 1 ]; then
 			[ $VERBOSE -gt 0 ] && error_echo "$(basename "$LSOURCE") is not a shell script.."

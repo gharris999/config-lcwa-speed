@@ -79,7 +79,7 @@ env_file_exists(){
 #~ LCWA_SUPREPO='https://github.com/gharris999/config-lcwa-speed-dev.git'
 #~ LCWA_SUPREPO_BRANCH='origin/master'
 #~ LCWA_SUPREPO_LOCAL="/usr/local/share/config-${LCWA_SERVICE}"
-#~ LCWA_SUPREPO_UPDATE=0
+#~ LCWA_SUPREPO_UPDATE=1
 
 # Conf, data & log files
 #~ LCWA_ENVFILE="/etc/default/${LCWA_SERVICE}"							# Env vars file read by the systemd service unit file
@@ -107,6 +107,7 @@ env_file_exists(){
 #~ LCWA_RTPRIO=45
 #~ LCWA_MEMLOCK=infinity
 #~ LCWA_CLEARLOG=1
+#~ LCWA_NOUPDATES="1"													# Prevents nightly updates from the remote repos. Can be overridden with config-lcwa-speed-update.sh --force
 
 # Utility Scripts
 #~ LCWA_DEBUG_SCRIPT="${LCWA_SUPREPO_LOCAL}/scripts/${INST_NAME}-debug.sh"
@@ -214,7 +215,7 @@ function env_vars_defaults_get(){
 [ -z "$LCWA_SUPREPO" ] 				&&  LCWA_SUPREPO='https://github.com/gharris999/config-lcwa-speed-dev.git'
 [ -z "$LCWA_SUPREPO_BRANCH" ] 		&&  LCWA_SUPREPO_BRANCH='origin/master'
 [ -z "$LCWA_SUPREPO_LOCAL" ] 		&&  LCWA_SUPREPO_LOCAL="${LCWA_INSTDIR}/speedtest-config"
-[ -z "$LCWA_SUPREPO_UPDATE" ] 		&&  LCWA_SUPREPO_UPDATE=0
+[ -z "$LCWA_SUPREPO_UPDATE" ] 		&&  LCWA_SUPREPO_UPDATE=1
                                                             
 # Conf, data & log files
 [ -z "$LCWA_ENVFILE" ] 				&&  [ $IS_DEBIAN -gt 0 ] && LCWA_ENVFILE="/etc/default/${LCWA_SERVICE}" || LCWA_ENVFILE="/etc/sysconfig/${LCWA_SERVICE}"
