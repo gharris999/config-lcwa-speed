@@ -7,8 +7,8 @@
 # Vars
 ######################################################################################################
 
-##SCRIPT_VERSION=20231214.063159
-SCRIPT_VERSION=20231214.063159
+##SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240118.150037
 SCRIPT="$(realpath -s "$0")"
 SCRIPT_NAME="$(basename "$SCRIPT")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"

@@ -4,7 +4,7 @@
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
 ######################################################################################################
-SCRIPT_VERSION=20220921.085423
+SCRIPT_VERSION=20240118.150037
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"

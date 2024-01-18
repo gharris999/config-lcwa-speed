@@ -6,7 +6,7 @@
 #   By default, repos will be installed to /usr/local/share/lcwa-speed/speedtest &&
 #   									   /usr/local/share/lcwa-speed/speedtest-config
 ######################################################################################################
-SCRIPT_VERSION=20220729.105144
+SCRIPT_VERSION=20240118.150037
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"

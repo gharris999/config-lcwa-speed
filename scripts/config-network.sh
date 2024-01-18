@@ -2,7 +2,7 @@
 
 # Bash script to configure default NIC to a static IP address..
 
-SCRIPT_VERSION=20231026.075039
+SCRIPT_VERSION=20240118.150037
 
 # Todo: Support creating wifi APs via hostapd
 #		https://unix.stackexchange.com/questions/401533/making-hostapd-work-with-systemd-networkd-using-a-bridge

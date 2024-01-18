@@ -4,7 +4,7 @@
 # Bash script for installing Andi Klein's Python LCWA PPPoE Speedtest Logger
 # as a service on systemd systems
 ######################################################################################################
-SCRIPT_VERSION=20231222.093423
+SCRIPT_VERSION=20240118.150037
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPTNAME=$(basename $0)

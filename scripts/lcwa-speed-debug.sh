@@ -1,7 +1,7 @@
 #!/bin/bash
 # lcwa-speed-debug.sh -- script to debug lcwa-speed startup..
 
-SCRIPT_VERSION=20220227.112312
+SCRIPT_VERSION=20240118.150037
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"

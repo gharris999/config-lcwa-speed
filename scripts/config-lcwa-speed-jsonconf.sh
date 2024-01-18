@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script creating the config.json file required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 ######################################################################################################
-SCRIPT_VERSION=20231222.094429
+SCRIPT_VERSION=20240118.150037
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"

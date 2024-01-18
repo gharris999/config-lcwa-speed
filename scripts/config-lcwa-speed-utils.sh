@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script for installing basic script utilities to /usr/local/sbin
 ######################################################################################################
-SCRIPT_VERSION=20240115.085852
+SCRIPT_VERSION=20240118.150037
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"

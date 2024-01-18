@@ -76,7 +76,7 @@ env_file_exists(){
 #~ LCWA_REPO_UPDATE=1
 #~ LCWA_REPO_PATCH=0
 
-#~ LCWA_SUPREPO='https://github.com/gharris999/config-lcwa-speed-dev.git'
+#~ LCWA_SUPREPO='https://github.com/gharris999/config-lcwa-speed.git'
 #~ LCWA_SUPREPO_BRANCH='origin/master'
 #~ LCWA_SUPREPO_LOCAL="/usr/local/share/config-${LCWA_SERVICE}"
 #~ LCWA_SUPREPO_UPDATE=1
@@ -212,7 +212,7 @@ function env_vars_defaults_get(){
 [ -z "$LCWA_REPO_UPDATE" ] 			&&  LCWA_REPO_UPDATE=1
 [ -z "$LCWA_REPO_PATCH" ] 			&&  LCWA_REPO_PATCH=0
                                                             
-[ -z "$LCWA_SUPREPO" ] 				&&  LCWA_SUPREPO='https://github.com/gharris999/config-lcwa-speed-dev.git'
+[ -z "$LCWA_SUPREPO" ] 				&&  LCWA_SUPREPO='https://github.com/gharris999/config-lcwa-speed.git'
 [ -z "$LCWA_SUPREPO_BRANCH" ] 		&&  LCWA_SUPREPO_BRANCH='origin/master'
 [ -z "$LCWA_SUPREPO_LOCAL" ] 		&&  LCWA_SUPREPO_LOCAL="${LCWA_INSTDIR}/speedtest-config"
 [ -z "$LCWA_SUPREPO_UPDATE" ] 		&&  LCWA_SUPREPO_UPDATE=1

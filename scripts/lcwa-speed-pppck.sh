@@ -4,7 +4,7 @@
 # Bash script to check to see if a auto initiated pppoe connection is still up, and if not, re-establish it.
 ############################################################################################################
 
-SCRIPT_VERSION=20220228.074614
+SCRIPT_VERSION=20240118.150037
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
