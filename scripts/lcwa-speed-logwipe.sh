@@ -24,6 +24,7 @@ disp_help(){
 DEBUG=0
 VERBOSE=0
 TEST=0
+WIPE_OPTS=
 
 # Default location & name of the envfile
 ENV_FILE='/etc/default/lcwa-speed'
@@ -63,7 +64,7 @@ do
 	    disp_help "$SCRIPT_DESC"
 	    exit 0
 	    ;;
-	-d|--debug)	# Emit debugging info
+	-d|--debug)	# Wipe debug logs
 	    ((DEBUG+=1))
 	    ;;
 	-t|--test)	# Operate in dry-run mode, i.e. don't actually truncate files.
@@ -85,12 +86,17 @@ done
 
 [ $TEST -gt 0 ] && echo 'Operating in test / dry-run mode..'
 
+if [ $DEBUG -gt 0 ]; then
+    LCWA_LOGFILE="${LCWA_LOGDIR}/${LCWA_SERVICE}-debug.log"
+    LCWA_ERRFILE="${LCWA_LOGDIR}/${LCWA_SERVICE}-debug-error.log"
+fi
+
 # Construct the CSV filename:
 LCWA_CSVFILE="${LCWA_DATADIR}/$(hostname | cut -c -4)_${FNAME_DATE}speedfile.csv"
 CSVFILE_NAME="$(basename "$LCWA_CSVFILE")"
 
 
-if [ $DEBUG -gt 0 ]; then
+if [ $DEBUG -gt 1 ]; then
     echo ' '
     echo "DEBUG         == ${DEBUG}"
     echo "VERBOSE       == ${VERBOSE}"
@@ -118,16 +124,16 @@ if [ $NO_ROTATE -lt 1 ]; then
     [ $TEST -lt 1 ] && logrotate -vf "$ROTATE_CONF_FILE"
 fi
 
-for FILE in "$LCWA_LOGFILE" "$LCWA_ERRFILE"
+for LOG_FILE in "$LCWA_LOGFILE" "$LCWA_ERRFILE"
 do
-    if [ -f "$FILE" ]; then
-	echo "Creating backup of ${FILE}.."
-	[ $TEST -lt 1 ] && cp -p "$FILE" "${FILE}.bak"
-	echo "Truncating file ${FILE}.."
-	[ $TEST -lt 1 ] && truncate --size=0 "$FILE"
+    if [ -f "$LOG_FILE" ]; then
+	echo "Creating backup of ${LOG_FILE}.."
+	[ $TEST -lt 1 ] && cp -p "$LOG_FILE" "${LOG_FILE}.bak"
+	echo "Truncating file ${LOG_FILE}.."
+	[ $TEST -lt 1 ] && truncate --size=0 "$LOG_FILE"
     else
-	"Creating file ${FILE}.."
-	[ $TEST -lt 1 ] && touch "$FILE"
+	echo "Creating file ${LOG_FILE}.."
+	[ $TEST -lt 1 ] && touch "$LOG_FILE"
     fi
 done
 

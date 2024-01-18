@@ -44,6 +44,8 @@ NO_FIX=0
 
 FNAME_DATE="$(date +%F)"
 
+########################################################################
+
 SHORTARGS='hdvtnD:'
 LONGARGS="help,debug,verbose,test,no-fix,date:"
 
@@ -66,10 +68,10 @@ do
 	    disp_help "$SCRIPT_DESC"
 	    exit 0
 	    ;;
-	-d|--debug)	# Emit debugging info
+	-d|--debug)	# View debug logs
 	    ((DEBUG+=1))
 	    ;;
-	-v|--verbose)	# Display the networkctl statis info for the interfaces
+	-v|--verbose)	# Emit extra Info
 	    ((VERBOSE+=1))
 	    QUIET=0
 	    ;;
@@ -93,11 +95,16 @@ done
 
 [ $TEST -gt 0 ] && echo 'Operating in test / dry-run mode..'
 
+if [ $DEBUG -gt 0 ]; then
+    LCWA_LOGFILE="${LCWA_LOGDIR}/${LCWA_SERVICE}-debug.log"
+    LCWA_ERRFILE="${LCWA_LOGDIR}/${LCWA_SERVICE}-debug-error.log"
+fi
+
 # Construct the CSV filename:
 LCWA_CSVFILE="${LCWA_DATADIR}/$(hostname | cut -c -4)_${FNAME_DATE}speedfile.csv"
 CSVFILE_NAME="$(basename "$LCWA_CSVFILE")"
 
-if [ $DEBUG -gt 0 ]; then
+if [ $DEBUG -gt 1 ]; then
     echo ' '
     echo "DEBUG         == ${DEBUG}"
     echo "VERBOSE       == ${VERBOSE}"
@@ -116,11 +123,11 @@ if [ $DEBUG -gt 0 ]; then
 fi
 
 # Create files that don't exist..
-for FILE in "$LCWA_LOGFILE" "$LCWA_ERRFILE" "$LCWA_CSVFILE"
+for MYFILE in "$LCWA_LOGFILE" "$LCWA_ERRFILE" "$LCWA_CSVFILE"
 do
-    if [ ! -f "$FILE" ]; then
-	[ $VERBOSE -gt 0 ] && echo "Creating ${FILE}.."
-	[ $TEST -lt 1 ] && touch "$FILE"
+    if [ ! -f "$MYFILE" ]; then
+	[ $VERBOSE -gt 0 ] && echo "Creating ${MYFILE}.."
+	[ $TEST -lt 1 ] && touch "$MYFILE"
     fi
 done
 
