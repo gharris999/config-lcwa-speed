@@ -7,8 +7,8 @@
 # Vars
 ######################################################################################################
 
-##SCRIPT_VERSION=20240118.150037
-SCRIPT_VERSION=20240118.150037
+##SCRIPT_VERSION=20240118.181639
+SCRIPT_VERSION=20240118.181639
 SCRIPT="$(realpath -s "$0")"
 SCRIPT_NAME="$(basename "$SCRIPT")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -155,11 +155,11 @@ firewall_subnet_check(){
 	# Get the link status of the interface(s)
 	
 	if [ $LANY_IFACE -gt 0 ]; then
-		#~ [ $VERBOSE -gt 0 ] && log_msg "Getting link status for all network interfaces.."
+		[ $VERBOSE -gt 0 ] && log_msg "Getting link status for all network interfaces.."
 		LIFACES="$(get_links_wait "" "$LSETTLE_TIME")"
 	else
 		[ -z "$LIFACE" ] && LIFACE="$(iface_primary_getb)"
-		#~ [ $VERBOSE -gt 0 ] && log_msg "Getting link status for interface ${LIFACE}.."
+		[ $VERBOSE -gt 0 ] && log_msg "Getting link status for interface ${LIFACE}.."
 		LIFACES="$(get_link_wait "$LIFACE" "$LSETTLE_TIME")"
 	fi
 	LHAS_LINK=$?
@@ -171,7 +171,7 @@ firewall_subnet_check(){
 	fi
 
 	# Get the subnet config for UFW..
-	LFW_SUBNETS="$(ufw status | grep ALLOW | awk '{print $3}' | sort --unique | xargs)"
+	LFW_SUBNETS="$(ufw status | sed -e 's/ (v6)/_(v6)/' | grep 'ALLOW' | awk '{print $3}' | sort --unique | xargs)"
 
 	# If UFW is unconfigured, flag it for configuration..
 	if [ -z "$LFW_SUBNETS" ]; then
