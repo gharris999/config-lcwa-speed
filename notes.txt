@@ -46,6 +46,10 @@
 #
 #	scripts/lcwa-speed-lognetdev.sh			--	logs traffic stats for the network interfaces
 #
+#	scripts/lcwa-speed-logwipe.sh			--	wipes the stdout and stderr logs
+#
+#	scripts/lcwa-speed-logview.sh			--	Uses multitail to view the stdout, stderr and this day's CSV speedfile
+#
 #	scripts/lcwa-speed-update.sh			--	checks for and performs git updates for the lcwa-speed and config repos
 #
 #	scripts/lcwa-speed-debug.sh				--	method to run the lcwa-speed python code independent of the systemd

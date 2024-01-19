@@ -1,0 +1,58 @@
+# config-lcwa-speed script functions
+# 
+####################################################################################################################################
+# CONFIG SCRIPTS
+####################################################################################################################################
+#
+# config-lcwa-speed.sh -- top level install script for the lcwa-speed service. It invokes the following scripts:
+# 
+#   scripts/config-lcwa-speed-sysprep.sh     --    initial sys prep; configures rpi systems for us local, etc, configures tz, hostname, 
+#                                                  installs some basic utilites, adds admin sudo accounts
+# 
+#   scripts/config-lcwa-speed-inst.sh        --    creates the service environmental file that controls component install locations, 
+#                                                  account names, service name, etc.  Creates service account, various directories 
+#                                                  for service components.
+#
+#   scripts/config-clwa-speed-env.sh         --    creates the service environmental file independent of init (for testing only)
+#             
+#   scripts/config-lcwa-speed-deps.sh        --    Installs all the dependencies for the service, including system utilities, 
+#                                                  development tools, python libraries, and ookla speedtest binary
+#
+#   scripts/config-ookla-speedtest.sh        --    Installs the ookla speedtest binary and creates the ookla license file
+# 
+#   scripts/config-lcwa-speed-repos.sh       --    clones the repos to their install locations
+# 
+#   scripts/config-lcwa-speed-jsonconf.sh    --    creates the config.json file required by the python code
+#  
+#   scripts/config-lcwa-speed-services.sh    --    creates and enables the systemd service and timer unit files
+#
+#   scripts/config-lcwa-speed-pppoe.sh       --    creates the optional PPPoE interface
+#  
+#   scripts/config-lcwa-speed-utils.sh       --    installs various utility scripts
+#  
+#   scripts/config-lcwa-speed-fw.sh          --    configures the system firewall
+#
+# 
+####################################################################################################################################
+# UTILITY SCRIPTS
+####################################################################################################################################
+#
+#   scripts/lcwa-speed-env.sh                --    populates the service environmental vars with default values
+#
+#   scripts/lcwa-speed-fwck.sh               --    checks the firewall state.  Should be invoked from /etc/rc.local at boot
+#
+#   scripts/lcwa-pppck.sh                    --    checks the state of the pppoe interface.  Not needed if the pppoe-connect
+#                                                  systemd service is installed by scripts/config-lcwa-speed-pppoe.sh
+#
+#   scripts/lcwa-speed-lognetdev.sh          --    logs traffic stats for the network interfaces
+#
+#   scripts/lcwa-speed-logwipe.sh            --    wipes the stdout and stderr logs
+#
+#   scripts/lcwa-speed-logview.sh            --    Uses multitail to view the stdout, stderr and this day's CSV speedfile
+#
+#   scripts/lcwa-speed-update.sh             --    checks for and performs git updates for the lcwa-speed and config repos
+#
+#   scripts/lcwa-speed-debug.sh              --    method to run the lcwa-speed python code independent of the systemd
+#                                                   service for debugging purposes.
+#
+
