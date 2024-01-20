@@ -9,7 +9,13 @@
 # 
 #   scripts/config-lcwa-speed-sysprep.sh     --    initial sys prep; configures rpi systems for us local, etc, 
 #                                                  configures tz, hostname, installs some basic utilites, adds 
-#                                                  admin sudo accounts.
+#                                                  admin sudo accounts.  Configures sshd to allow logins from
+#                                                  systems using old hostkeys (e.g. dropbear). Adds some helpful
+#                                                  bash aliases for managing & viewing logs.
+#
+#   scripts/config-lcwa-speed-kpanic.sh      --    configures sysctl runtime kernel parameters to enable auto
+#                                                  reboots on kernel panics.  Called by: 
+#                                                  scripts/config-lcwa-speed-sysprep.sh
 # 
 #   scripts/config-lcwa-speed-inst.sh        --    creates the service environmental file that controls component
 #                                                  install locations, account names, service name, etc.  Creates 

@@ -8,8 +8,7 @@
 #   dependent services properly wait until network is up before starting.
 #   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
 ######################################################################################################
-##INCSCRIPT_VERSION=20240120.101114
-INCSCRIPT_VERSION=20240120.101114
+INCSCRIPT_VERSION=20240120.101406
 
 SCRIPT_NAME=$(basename -- "$0")
 
