@@ -3,13 +3,16 @@
 ######################################################################################################
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
+#
+# Latest mod: Config sysctl for auto reboots on kernel panics, add convenience bash aliases,
+# add sshd.conf settings to permit connections with old cyphers..
 ######################################################################################################
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240120.095709
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPT_NAME="$(basename $0)"
-SCRIPT_DESC="Installs system and python library dependencies for the lcwa-speed service."
+SCRIPT_DESC="Initial system prep: hostname checking, locale settings, TZ setting, user creation, etc."
 
 
 ######################################################################################################
@@ -40,9 +43,12 @@ QUIET=0
 VERBOSE=0
 FORCE=0
 TEST=0
+
 NO_CHANGE_HOSTNAME=0
+NO_CONFIG_KERNELPANIC=0
 NEW_HOSTNAME=
 UNINSTALL=0
+USERS=
 
 INST_NAME='lcwa-speed'
 INST_PROD="LCWA Python3 PPPoE Speedtest Logger"
@@ -452,6 +458,170 @@ user_admin_remove(){
 	
 }
 
+notquiet_error_echo(){
+	[ $QUIET -lt 1 ] && echo "$@" 1>&2;
+}
+
+function bash_alias_add(){
+	[ $DEBUG -gt 1 ] && error_echo "${FUNCNAME}( $@ )"
+	local LALIASES="$1"
+	local LALIAS="$2"
+	local LCOMMAND="$3"
+	local LESCAPE="${4:-1}"
+	
+	sed -i "/^alias ${LALIAS}=/d" "$LALIASES"
+	[ $QUIET -lt 1 ] && error_echo "Adding alias ${LALIAS} to ${LALIASES}"
+	# By default, escape the command string..
+	[ $LESCAPE -gt 0 ] && LCOMMAND="$(escape_var "$LCOMMAND")"
+	[ $TEST -lt 1 ] && echo "alias ${LALIAS}=\"${LCOMMAND}\"" >>"$LALIASES"
+	
+}
+
+function bash_alias_remove(){
+	[ $DEBUG -gt 1 ] && error_echo "${FUNCNAME}( $@ )"
+	local LALIASES="$1"
+	local LALIAS="$2"
+	local LCOMMAND="$3"
+	local LESCAPE="${4:-1}"
+	[ $QUIET -lt 1 ] && error_echo "Removing alias ${LALIAS} from ${LALIASES}"
+	[ $TEST -lt 1 ] && sed -i "/^alias ${LALIAS}=/d" "$LALIASES"
+}
+
+function config_bash_aliases(){
+	debug_echo "${FUNCNAME}( $@ )"
+
+	local LUSERS="$1"
+	local LUSER=
+	local LGROUP=
+	local LALIASES=
+	local LFILEHEADER=
+	local LCMD=
+
+	if [ $UNINSTALL -gt 0 ]; then
+		LCMD='bash_alias_remove'
+	else
+		LCMD='bash_alias_add'
+	fi
+
+	for LUSER in $LUSERS
+	do
+		if [ $(id "$LUSER" 2>/dev/null | wc -l) -lt 1 ]; then
+			error_echo "${FUNCNAME} error: User ${LUSER} does not exist."
+			continue
+		fi
+		
+		LGROUP="$(id -ng $LUSER)"
+		LALIASES="/${LUSER}/.bash_aliases"
+		if [ "$LUSER" != 'root' ]; then
+			LALIASES="/home${LALIASES}"
+		fi
+
+		LFILEHEADER="#${LALIASES} -- $(date)"
+
+		if [ ! -f "$LALIASES" ]; then
+			[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && touch "$LALIASES"
+			[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && echo "$LFILEHEADER" > "$LALIASES"
+		else
+			# Delete the header line
+			#~ sed -i '/bash_aliases/d' "$LALIASES"
+			[ $TEST -lt 1 ] && sed -i -e '1!b' -e '/bash_aliases --/d' "$LALIASES"
+
+			# Insert the header line at the top
+			[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && sed -i "1s@^@${LFILEHEADER}\n@" "$LALIASES"
+		fi
+
+		[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && chmod 755 "$LALIASES"
+		[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && chown "${LUSER}:${LGROUP}" "$LALIASES"
+
+		# Make a backup of the aliases file..
+		if [ ! -f "${LALIASES}.org}" ]; then
+			[ $TEST -lt 1 ] && cp -p "$LALIASES" "${LALIASES}.org"
+		fi
+		[ $TEST -lt 1 ] && cp -pf "$LALIASES" "${LALIASES}.bak"
+		[ $TEST -lt 1 ] && chown "${LUSER}:${LGROUP}" "${LALIASES}.bak"
+
+		#Add orr remove the aliases..
+		[ $UNINSTALL -lt 1 ] && notquiet_error_echo "Configuring ${LALIASES} for user ${LUSER}.." || notquiet_error_echo "Cleaning ${LALIASES} for user ${LUSER}.."
+		
+		$LCMD "$LALIASES" 'home'				"pushd /home/\$(who am i | cut '-d ' -f1) >/dev/null"
+		$LCMD "$LALIASES" 'sbin'				'pushd /usr/local/sbin >/dev/null'
+		$LCMD "$LALIASES" 'psgrep'				'ps aux | grep -v grep | grep -E'
+		$LCMD "$LALIASES" 'lsservices'			'systemctl --state=active --no-pager | grep "active running" --color=never | sort | sed -e "s/[[:space:]]*$//"'
+		$LCMD "$LALIASES" 'lskernels'			'dpkg --list | grep -E "linux-image" | sort -b -k 3,3 --version-sort -r'
+		$LCMD "$LALIASES" 'service-reload'		'systemctl daemon-reload && systemctl reset-failed'
+
+		# Useful aliases for speedboxes
+		if [ $(hostname | grep -c -E '^LC.*') -gt 0 ]; then
+			$LCMD "$LALIASES" 'logs'			"pushd ${LCWA_LOGDIR}"
+			$LCMD "$LALIASES" 'data'			"pushd ${LCWA_DATADIR}"
+			$LCMD "$LALIASES" 'code'			"pushd ${LCWA_REPO_LOCAL}/src"
+		fi
+
+		if [ "$LUSER" = 'root' ]; then
+			$LCMD "$LALIASES" 'mediaprogress' 'watch "lsof -c rsync | grep /mnt/Media"'
+			$LCMD "$LALIASES" 'filesprogress' 'watch "lsof -c rsync | grep -E"'
+		fi
+
+		if [ "$LUSER" != 'root' ]; then
+			[ $TEST -lt 1 ] && chown "${LUSER}:${LUSER}" "$LALIASES"
+			[ $TEST -lt 1 ] && chown "${LUSER}:${LUSER}" "${LALIASES}.org"
+		fi
+		
+		if [ $VERBOSE -gt 0 ]; then
+			echo "Contents of ${LALIASES}"
+			cat "$LALIASES"
+		fi
+
+		[ $QUIET -lt 1 ] && error_echo ' '
+
+	done
+	debug_echo "${FUNCNAME} done"
+}
+
+config_sshd_oldhostkeys(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local SSHD_CONF='/etc/ssh/sshd_config'
+	local SSH_CONF='/etc/ssh/ssh_config'
+	local NSSWITCH_CONF='/etc/nsswitch.conf'
+	local PAMD_SSHD='/etc/pam.d/sshd'
+	
+	# /etc/ssh/sshd_config
+	if [ $(grep -c -E '^\s*HostKeyAlgorithms' "$SSHD_CONF") -lt 1 ]; then
+		error_echo "Adding 'HostKeyAlgorithms +ssh-rsa' to ${SSHD_CONF}.."
+		[ $TEST -lt 1 ] && echo ' ' >>"$SSHD_CONF"
+		[ $TEST -lt 1 ] && echo 'HostKeyAlgorithms +ssh-rsa' >>"$SSHD_CONF"
+	elif [ $(grep -c -E '^\s*HostKeyAlgorithms \+ssh-rsa' "$SSHD_CONF") -gt 0 ]; then
+		error_echo "${SSHD_CONF} already configured for HostKeyAlgorithms +ssh-rsa"
+	else
+		error_echo "Modifying ${SSHD_CONF} to add ssh-rsa to HostKeyAlgorithms.."
+		#~ [ $TEST -lt 1 ] && sed -i -e 's/^\(HostKeyAlgorithms .*\)$/\1,ssh-rsa/' "$SSHD_CONF"
+		[ $TEST -lt 1 ] && sed -i -e 's/^\s*\(HostKeyAlgorithms .*\)$/\1,ssh-rsa/' "$SSHD_CONF"
+	fi
+
+	if [ $(grep -c -E '^PubkeyAcceptedAlgorithms' "$SSHD_CONF") -lt 1 ]; then
+		error_echo "Adding 'PubkeyAcceptedAlgorithms +ssh-rsa' to ${SSHD_CONF}.."
+		[ $TEST -lt 1 ] && echo 'PubkeyAcceptedAlgorithms +ssh-rsa' >>"$SSHD_CONF"
+	elif [ $(grep -c -E '^PubkeyAcceptedAlgorithms \+ssh-rsa' "$SSHD_CONF") -gt 0 ]; then
+		error_echo "${SSHD_CONF} already configured for PubkeyAcceptedAlgorithms +ssh-rsa"
+	else
+		error_echo "Modifying ${SSHD_CONF} to add ssh-rsa to PubkeyAcceptedAlgorithms.."
+		[ $TEST -lt 1 ] && sed -i -e 's/^\(PubkeyAcceptedAlgorithms .*\)$/\1,ssh-rsa/' "$SSHD_CONF"
+	fi
+
+	# Modify /etc/ssh/ssh_config so we can ssh into, e.g., ubiquiti airmax & airfiber devices
+	if [ $(grep -c -E '^\s*HostKeyAlgorithms' "$SSH_CONF") -lt 1 ]; then
+		error_echo "Adding 'HostKeyAlgorithms +ssh-rsa,ssh-dss' to ${SSH_CONF}.."
+		[ $TEST -lt 1 ] && echo ' ' >>"$SSH_CONF"
+		[ $TEST -lt 1 ] && echo 'HostKeyAlgorithms +ssh-rsa,ssh-dss' >>"$SSH_CONF"
+	elif [ $(grep -c -E '^\s*HostKeyAlgorithms \+ssh-rsa,ssh-dss' "$SSH_CONF") -gt 0 ]; then
+		error_echo "${SSH_CONF} already configured for HostKeyAlgorithms +ssh-rsa,ssh-dss"
+	else
+		error_echo "Modifying ${SSH_CONF} to add +ssh-rsa,ssh-dss to HostKeyAlgorithms.."
+		#~ [ $TEST -lt 1 ] && sed -i -e 's/^\(HostKeyAlgorithms .*\)$/\1,ssh-rsa/' "$SSH_CONF"
+		[ $TEST -lt 1 ] && sed -i -e 's/^\s*\(HostKeyAlgorithms .*\)$/\1,+ssh-rsa,ssh-dss/' "$SSH_CONF"
+	fi
+
+}
 
 ######################################################################################################
 # RPi specific functions
@@ -765,8 +935,11 @@ do
 		-t|--test)			# Tests script logic without performing actions.
 			((TEST+=1))
 			;;
-		--no-hostname)
+		--no-hostname)		# Skips LCxx hostname checking
 			NO_CHANGE_HOSTNAME=1
+			;;
+		--no-kernel-panic)	# Skips configuring sysctl values for auto reboots on kernel panics
+			NO_CONFIG_KERNELPANIC=1
 			;;
 		--hostname)		#=NEWHOSTNAME -- change system hostname
 			shift
@@ -804,6 +977,13 @@ systemd_set_tz_to_local
 [ $NO_CHANGE_HOSTNAME -lt 1 ] && hostname_check "$NEW_HOSTNAME"
 
 ####################################################################
+# Config sysctl values for automatic reboots on kernel panics
+if [ $NO_CONFIG_KERNELPANIC -lt 1 ]; then
+    sysctl_panic_defaults_write "$SYSCTL_PANIC_CONF"
+    sysctl_panic_enable "$SYSCTL_PANIC_CONF"
+fi
+
+####################################################################
 # Install missing basic utilities
 basic_utils_install
 
@@ -812,3 +992,15 @@ basic_utils_install
 user_daadmin_add
 user_admin_add
 	
+####################################################################
+# Add some helpful bash aliases
+[ -z "$USERS" ] && USERS=$(cat /etc/passwd | grep -E '^.*/home/.*/bash$|^.*/root.*bash$' | sed -n -e 's/^\([^:]*\):.*$/\1/p' | sort | xargs )
+config_bash_aliases "$USERS"
+
+####################################################################
+# Allow ssh logins from older ssh clients, e.g. airCube dropbear
+config_sshd_oldhostkeys
+
+####################################################################
+# Configure sysctl values to enable auto reboots after kernel panics
+"${SCRIPT_DIR}/config-lcwa-speed-kpanic.sh" --verbose

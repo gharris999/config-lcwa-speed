@@ -2,10 +2,14 @@
 
 ######################################################################################################
 # Bash include script for generically installing services on upstart, systemd & sysv systems
-# 20230203 -- Gordon Harris
+# 20240120 -- Gordon Harris
+#
+# Last mod: systemd_unit_file_create -- added Wants=network-online.target to make sure network
+#   dependent services properly wait until network is up before starting.
+#   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
 ######################################################################################################
-##INCSCRIPT_VERSION=20240111.174318
-INCSCRIPT_VERSION=20240111.174318
+##INCSCRIPT_VERSION=20240120.101114
+INCSCRIPT_VERSION=20240120.101114
 
 SCRIPT_NAME=$(basename -- "$0")
 
@@ -4372,7 +4376,8 @@ systemd_unit_file_create(){
 	[Unit]
 	Description=$INST_DESC
 	After=network-online.target
-
+	Wants=network-online.target
+	
 	[Service]
 	#UMask=002
 	Nice=${INST_NICE}

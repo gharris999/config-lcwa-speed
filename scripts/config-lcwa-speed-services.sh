@@ -3,8 +3,11 @@
 ######################################################################################################
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
+# Last mod: systemd_unit_file_create -- added Wants=network-online.target to make sure network
+#   dependent services properly wait until network is up before starting.
+#   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
 ######################################################################################################
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240120.092757
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -187,7 +190,8 @@ lcwa_speed_unit_file_create(){
 	[Unit]
 	Description=$LCWA_DESC
 	After=network-online.target
-
+	Wants=network-online.target
+	
 	[Service]
 	#UMask=002
 	Nice=-19
@@ -227,6 +231,7 @@ lcwa_speed_unit_file_create(){
 	[Unit]
 	Description=$LCWA_DESC debug mode.
 	After=network-online.target
+	Wants=network-online.target	
 
 	[Service]
 	#UMask=002

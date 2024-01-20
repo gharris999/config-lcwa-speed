@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script for installing basic script utilities to /usr/local/sbin
 ######################################################################################################
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240119.075835
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -128,6 +128,7 @@ utility_scripts_install(){
 	local LSCRIPT_DIR="${1:-${SCRIPT_DIR}}"
 	local LTARGET_DIR="${2:-/usr/local/sbin}"
 	local LSCRIPT=
+	local LLINK=
 	local LSOURCE=
 	local LTARGET=
 
@@ -182,6 +183,16 @@ utility_scripts_install(){
 			fi
 		fi
 
+	done
+
+	# Make some useful links.
+	for LSCRIPT in lcwa-speed-logwipe.sh lcwa-speed-logview.sh
+	do
+		LLINK="${LSCRIPT:14:7}"
+		LSOURCE="${LTARGET_DIR}/${LSCRIPT}"
+		LTARGET="${LCWA_LOGDIR}/${LLINK}"
+		[ $QUIET -lt 1 ] && error_echo "Linking ${LSOURCE} to ${LTARGET}"
+		[ $TEST -lt 1 ] && ln -s "$LSOURCE" "$LTARGET"
 	done
 	
 	rclocal_create
