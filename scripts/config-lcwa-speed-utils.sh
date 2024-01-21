@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240121.114218
+SCRIPT_VERSION=20240121.160750
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -151,10 +151,12 @@ function config_bash_aliases(){
 
 		# Useful aliases for speedboxes
 		if [ $(hostname | grep -c -E '^LC.*') -gt 0 ]; then
-			$LCMD "$LALIASES" 'logs'			"pushd ${LCWA_LOGDIR}"
-			$LCMD "$LALIASES" 'data'			"pushd ${LCWA_DATADIR}"
 			$LCMD "$LALIASES" 'code'			"pushd ${LCWA_REPO_LOCAL}/src"
-			$LCMD "$LALIASES" 'config'			"pushd ${LCWA_SUPREPO_LOCAL}"
+			$LCMD "$LALIASES" 'config'			"pushd ${LCWA_CONFDIR}"
+			$LCMD "$LALIASES" 'data'			"pushd ${LCWA_DATADIR}"
+			$LCMD "$LALIASES" 'env'				"pushd /etc/default"
+			$LCMD "$LALIASES" 'logs'			"pushd ${LCWA_LOGDIR}"
+			$LCMD "$LALIASES" 'utils'			"pushd ${LCWA_SUPREPO_LOCAL}"
 		fi
 
 		if [ "$LUSER" = 'root' ]; then

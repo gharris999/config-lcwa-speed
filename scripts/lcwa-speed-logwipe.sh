@@ -5,7 +5,7 @@
 #
 # Latest mod: Add cmdline args to wipe only stdout or stderr log
 ######################################################################################################
-SCRIPT_VERSION=20240121.094408
+SCRIPT_VERSION=20240121.160457
 
 SCRIPT="$(realpath -s "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -153,7 +153,11 @@ done
 if [ $NO_ROTATE -lt 1 ]; then
     ROTATE_CONF_FILE="/etc/logrotate.d/${LCWA_SERVICE}"
     echo "Executing /etc/logrotate.d/${LCWA_SERVICE} log rotate script.."
-    [ $TEST -lt 1 ] && logrotate -vf "$ROTATE_CONF_FILE"
+    if [ $VERBOSE -gt 0 ]; then
+	[ $TEST -lt 1 ] && logrotate -vf "$ROTATE_CONF_FILE"
+    else
+	[ $TEST -lt 1 ] && logrotate -vf "$ROTATE_CONF_FILE" >/dev/null
+    fi
 fi
 
 # Wipe the stdout log..
