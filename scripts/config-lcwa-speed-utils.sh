@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240121.094940
+SCRIPT_VERSION=20240121.112958
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -40,8 +40,139 @@ VERBOSE=0
 FORCE=0
 TEST=0
 
+LCWA_ENVFILE=
+ALIAS_INST_ONLY=0
 UNINSTALL=0
 KEEP=0
+
+function escape_var(){
+	VAR="$1"
+	# escape the escapes, escape the $s, escape the `s, escape the [s, escape the ]s, escape the "s
+	#~ ESCVAR="$(echo "$VAR" | sed -e 's/\\/\\\\/g;s/\$/\\\$/g;s/`/\\`/g;s/\[/\\\[/g;s/\]/\\\]/g;s/"/\\"/g')"
+	ESCVAR="$(echo "$VAR" | sed -e 's/\\/\\\\/g;s/\$/\\\$/g;s/`/\\`/g;s/"/\\"/g')"
+	echo $ESCVAR
+}
+
+function bash_alias_add(){
+	[ $DEBUG -gt 1 ] && error_echo "${FUNCNAME}( $@ )"
+	local LALIASES="$1"
+	local LALIAS="$2"
+	local LCOMMAND="$3"
+	local LESCAPE="${4:-1}"
+	
+	sed -i "/^alias ${LALIAS}=/d" "$LALIASES"
+	[ $QUIET -lt 1 ] && error_echo "Adding alias ${LALIAS} to ${LALIASES}"
+	# By default, escape the command string..
+	[ $LESCAPE -gt 0 ] && LCOMMAND="$(escape_var "$LCOMMAND")"
+	[ $TEST -lt 1 ] && echo "alias ${LALIAS}=\"${LCOMMAND}\"" >>"$LALIASES"
+	
+}
+
+function bash_alias_remove(){
+	[ $DEBUG -gt 1 ] && error_echo "${FUNCNAME}( $@ )"
+	local LALIASES="$1"
+	local LALIAS="$2"
+	local LCOMMAND="$3"
+	local LESCAPE="${4:-1}"
+	[ $QUIET -lt 1 ] && error_echo "Removing alias ${LALIAS} from ${LALIASES}"
+	[ $TEST -lt 1 ] && sed -i "/^alias ${LALIAS}=/d" "$LALIASES"
+}
+
+######################################################################################################
+# config_bash_aliases( 'list of users' ) Create convenience aliases for shell users
+######################################################################################################
+
+function config_bash_aliases(){
+	debug_echo "${FUNCNAME}( $@ )"
+
+	local LUSERS="$1"
+	local LUSER=
+	local LGROUP=
+	local LALIASES=
+	local LFILEHEADER=
+	local LCMD=
+
+	if [ $UNINSTALL -gt 0 ]; then
+		LCMD='bash_alias_remove'
+	else
+		LCMD='bash_alias_add'
+	fi
+
+	for LUSER in $LUSERS
+	do
+		if [ $(id "$LUSER" 2>/dev/null | wc -l) -lt 1 ]; then
+			error_echo "${FUNCNAME} error: User ${LUSER} does not exist."
+			continue
+		fi
+		
+		LGROUP="$(id -ng $LUSER)"
+		LALIASES="/${LUSER}/.bash_aliases"
+		if [ "$LUSER" != 'root' ]; then
+			LALIASES="/home${LALIASES}"
+		fi
+
+		LFILEHEADER="#${LALIASES} -- $(date)"
+
+		if [ ! -f "$LALIASES" ]; then
+			[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && touch "$LALIASES"
+			[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && echo "$LFILEHEADER" > "$LALIASES"
+		else
+			# Delete the header line
+			#~ sed -i '/bash_aliases/d' "$LALIASES"
+			[ $TEST -lt 1 ] && sed -i -e '1!b' -e '/bash_aliases --/d' "$LALIASES"
+
+			# Insert the header line at the top
+			[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && sed -i "1s@^@${LFILEHEADER}\n@" "$LALIASES"
+		fi
+
+		[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && chmod 755 "$LALIASES"
+		[ $UNINSTALL -lt 1 ] && [ $TEST -lt 1 ] && chown "${LUSER}:${LGROUP}" "$LALIASES"
+
+		# Make a backup of the aliases file..
+		if [ ! -f "${LALIASES}.org}" ]; then
+			[ $TEST -lt 1 ] && cp -p "$LALIASES" "${LALIASES}.org"
+		fi
+		[ $TEST -lt 1 ] && cp -pf "$LALIASES" "${LALIASES}.bak"
+		[ $TEST -lt 1 ] && chown "${LUSER}:${LGROUP}" "${LALIASES}.bak"
+
+		#Add orr remove the aliases..
+		[ $UNINSTALL -lt 1 ] && notquiet_error_echo "Configuring ${LALIASES} for user ${LUSER}.." || notquiet_error_echo "Cleaning ${LALIASES} for user ${LUSER}.."
+		
+		$LCMD "$LALIASES" 'home'				"pushd /home/\$(who am i | cut '-d ' -f1) >/dev/null"
+		$LCMD "$LALIASES" 'sbin'				'pushd /usr/local/sbin >/dev/null'
+		$LCMD "$LALIASES" 'psgrep'				'ps aux | grep -v grep | grep -E'
+		$LCMD "$LALIASES" 'lsservices'			'systemctl --state=active --no-pager | grep "active running" --color=never | sort | sed -e "s/[[:space:]]*$//"'
+		$LCMD "$LALIASES" 'lskernels'			'dpkg --list | grep -E "linux-image" | sort -b -k 3,3 --version-sort -r'
+		$LCMD "$LALIASES" 'service-reload'		'systemctl daemon-reload && systemctl reset-failed'
+
+		# Useful aliases for speedboxes
+		if [ $(hostname | grep -c -E '^LC.*') -gt 0 ]; then
+			$LCMD "$LALIASES" 'logs'			"pushd ${LCWA_LOGDIR}"
+			$LCMD "$LALIASES" 'data'			"pushd ${LCWA_DATADIR}"
+			$LCMD "$LALIASES" 'code'			"pushd ${LCWA_REPO_LOCAL}/src"
+			$LCMD "$LALIASES" 'config'			"pushd $LCWA_SUPREPO_LOCAL"
+		fi
+
+		if [ "$LUSER" = 'root' ]; then
+			$LCMD "$LALIASES" 'mediaprogress' 'watch "lsof -c rsync | grep /mnt/Media"'
+			$LCMD "$LALIASES" 'filesprogress' 'watch "lsof -c rsync | grep -E"'
+		fi
+
+		if [ "$LUSER" != 'root' ]; then
+			[ $TEST -lt 1 ] && chown "${LUSER}:${LUSER}" "$LALIASES"
+			[ $TEST -lt 1 ] && chown "${LUSER}:${LUSER}" "${LALIASES}.org"
+		fi
+		
+		if [ $VERBOSE -gt 0 ]; then
+			echo "Contents of ${LALIASES}"
+			cat "$LALIASES"
+		fi
+
+		[ $QUIET -lt 1 ] && error_echo ' '
+
+	done
+	debug_echo "${FUNCNAME} done"
+}
 
 ######################################################################################################
 # rclocal_create() Create the /etc/rc.local file to check the subnet
@@ -239,11 +370,7 @@ utility_scripts_remove(){
 
 PRE_ARGS="$@"
 
-# Make sure we're running as root 
-is_root
-
-
-SHORTARGS='hdqvftkr'
+SHORTARGS='hdqvftakr'
 
 LONGARGS="
 help,
@@ -252,6 +379,7 @@ quiet,
 verbose,
 test,
 force,
+alias,
 keep,
 remove,uninstall,
 inst-name:,
@@ -296,11 +424,19 @@ do
 		-t|--test)		# Tests script logic without performing actions.
 			((TEST+=1))
 			;;
+		-a|--alias)		# Install / update / remove (with --remove) bash aliases only.
+			ALIAS_INST_ONLY=1
+			;;
 		-k|--keep)
 			KEEP=1
 			;;
 		-r|--remove|--uninstall)	# Removes the utility scripts from /usr/local/sbin
 			UNINSTALL=1
+			;;
+		--env-file)		# =NAME -- Read a specific env file to get the locations for the install.
+			shift
+			LCWA_ENVFILE="$1"
+			[ -f "$LCWA_ENVFILE" ] && LCWA_ENVFILE="$(readlink -f "$LCWA_ENVFILE")" || LCWA_ENVFILE=
 			;;
 		*)
 			;;
@@ -309,6 +445,36 @@ do
 done
 
 [ $VERBOSE -gt 0 ] && error_echo "${SCRIPTNAME} ${PRE_ARGS}"
+
+# Make sure we're running as root 
+is_root
+
+# We need the /etc/default/lcwa-speed envvars only for creating the log wipe & view links..
+if [ ! -z "$LCWA_ENVFILE" ]; then
+	[ $VERBOSE -gt 0 ] && error_echo "Getting instance information from ${LCWA_ENVFILE}."
+	env_file_read "$LCWA_ENVFILE"
+	if [ $? -gt 0 ]; then
+		error_echo "${SCRIPT_NAME} warning: could not read from ${LCWA_ENVFILE}."
+	fi
+else
+	INCLUDE_FILE="${SCRIPT_DIR}/lcwa-speed-env.sh"
+	[ ! -f "$INCLUDE_FILE" ] && INCLUDE_FILE='/usr/local/sbin/lcwa-speed-env.sh'
+	[ $VERBOSE -gt 0 ] && error_echo "Including file: ${INCLUDE_FILE}"
+	source "$INCLUDE_FILE"
+	if [ $? -gt 0 ]; then
+		error_echo "${SCRIPT_NAME} warning: could not include file ${INCLUDE_FILE}."
+	else
+		env_vars_defaults_get
+	fi
+fi
+
+if [ $ALIAS_INST_ONLY -gt 0 ]; then
+	# Get users with login & shell privileges only..
+	[ -z "$USERS" ] && USERS=$(cat /etc/passwd | grep -E '^.*/home/.*/bash$|^.*/root.*bash$' | sed -n -e 's/^\([^:]*\):.*$/\1/p' | sort | xargs )
+	config_bash_aliases "$USERS"
+	exit 0
+fi
+
 
 if [ $KEEP -gt 0 ] && [ $UNINSTALL -gt 0 ]; then
 	[ $VERBOSE -gt 0 ] && error_echo "${SCRIPT_NAME}: Keeping install scripts."
@@ -320,3 +486,9 @@ if [ $UNINSTALL -gt 0 ]; then
 else
 	utility_scripts_install
 fi
+
+####################################################################
+# Add some helpful bash aliases
+[ -z "$USERS" ] && USERS=$(cat /etc/passwd | grep -E '^.*/home/.*/bash$|^.*/root.*bash$' | sed -n -e 's/^\([^:]*\):.*$/\1/p' | sort | xargs )
+config_bash_aliases "$USERS"
+
