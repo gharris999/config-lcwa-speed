@@ -5,7 +5,7 @@
 #
 # Latest mod: Add cmdline args to wipe only stdout or stderr log
 ######################################################################################################
-SCRIPT_VERSION=20240121.160457
+SCRIPT_VERSION=20240121.161513
 
 SCRIPT="$(realpath -s "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -156,7 +156,7 @@ if [ $NO_ROTATE -lt 1 ]; then
     if [ $VERBOSE -gt 0 ]; then
 	[ $TEST -lt 1 ] && logrotate -vf "$ROTATE_CONF_FILE"
     else
-	[ $TEST -lt 1 ] && logrotate -vf "$ROTATE_CONF_FILE" >/dev/null
+	[ $TEST -lt 1 ] && logrotate -vf "$ROTATE_CONF_FILE" >/dev/null 2>&1
     fi
 fi
 
