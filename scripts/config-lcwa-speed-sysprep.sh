@@ -7,7 +7,7 @@
 # Latest mod: Config sysctl for auto reboots on kernel panics, add convenience bash aliases,
 # add sshd.conf settings to permit connections with old cyphers..
 ######################################################################################################
-SCRIPT_VERSION=20240120.095709
+SCRIPT_VERSION=20240121.095303
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -555,6 +555,7 @@ function config_bash_aliases(){
 			$LCMD "$LALIASES" 'logs'			"pushd ${LCWA_LOGDIR}"
 			$LCMD "$LALIASES" 'data'			"pushd ${LCWA_DATADIR}"
 			$LCMD "$LALIASES" 'code'			"pushd ${LCWA_REPO_LOCAL}/src"
+			$LCMD "$LALIASES" 'config'			"pushd $LCWA_SUPREPO_LOCAL"
 		fi
 
 		if [ "$LUSER" = 'root' ]; then
