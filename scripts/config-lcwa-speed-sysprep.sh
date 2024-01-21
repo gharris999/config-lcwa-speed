@@ -7,7 +7,7 @@
 # Latest mod: Config sysctl for auto reboots on kernel panics, add convenience bash aliases,
 # add sshd.conf settings to permit connections with old cyphers..
 ######################################################################################################
-SCRIPT_VERSION=20240121.095303
+SCRIPT_VERSION=20240121.095804
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -44,6 +44,7 @@ VERBOSE=0
 FORCE=0
 TEST=0
 
+ALIAS_INST_ONLY=0
 NO_CHANGE_HOSTNAME=0
 NO_CONFIG_KERNELPANIC=0
 NEW_HOSTNAME=
@@ -946,6 +947,9 @@ do
 			shift
 			NEW_HOSTNAME="$1"
 			;;
+		-a|--alias)			# Install / update / remove (with --remove) bash aliases only.
+			ALIAS_INST_ONLY=1
+			;;
 		-r|--uninstall|--remove)	# Removes the 'admin' account. Doesn't uninstall basic utilities.
 			UNINSTALL=1
 			;;
@@ -957,6 +961,12 @@ do
 done
 
 [ $VERBOSE -gt 0 ] && error_echo "${SCRIPTNAME} ${PRE_ARGS}"
+
+if [ $ALIAS_INST_ONLY -gt 0 ]; then
+	[ -z "$USERS" ] && USERS=$(cat /etc/passwd | grep -E '^.*/home/.*/bash$|^.*/root.*bash$' | sed -n -e 's/^\([^:]*\):.*$/\1/p' | sort | xargs )
+	config_bash_aliases "$USERS"
+	exit 0
+fi
 
 if [ $UNINSTALL -gt 0 ]; then
 	user_admin_remove
