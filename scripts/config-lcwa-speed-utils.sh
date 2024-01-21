@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240121.092023
+SCRIPT_VERSION=20240121.094940
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -277,23 +277,23 @@ do
 	case "$1" in
 		--)
 			;;
-		-h|--help)			# Displays this help
+		-h|--help)		# Displays this help
 			disp_help "$SCRIPT_DESC"
 			exit 0
 			;;
-		-d|--debug)			# Shows debugging info.
+		-d|--debug)		# Shows debugging info.
 			((DEBUG+=1))
 			;;
-		-q|--quiet)			# Supresses message output.
+		-q|--quiet)		# Supresses message output.
 			QUIET=1
 			;;
 		-v|--verbose)		# Increase message output.
 			((VERBOSE+=1))
 			;;
-		-f|--force)			# Force overwriting target files.
+		-f|--force)		# Force overwriting target files.
 			((FORCE+=1))
 			;;
-		-t|--test)			# Tests script logic without performing actions.
+		-t|--test)		# Tests script logic without performing actions.
 			((TEST+=1))
 			;;
 		-k|--keep)
