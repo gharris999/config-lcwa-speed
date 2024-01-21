@@ -199,7 +199,7 @@ function env_vars_defaults_get(){
 [ -z "$LCWA_GROUP" ] 				&&  LCWA_GROUP="nogroup"
                                                             
 # Principal file locations                                  
-[ -z "$LCWA_INSTDIR" ] 			&&  LCWA_INSTDIR="/usr/local/share/${LCWA_INSTANCE}"
+[ -z "$LCWA_INSTDIR" ] 				&&  LCWA_INSTDIR="/usr/local/share/${LCWA_INSTANCE}"
 [ -z "$LCWA_HOMEDIR" ] 				&&  LCWA_HOMEDIR="/var/lib/${LCWA_INSTANCE}"
 [ -z "$LCWA_DATADIR" ] 				&&  LCWA_DATADIR="/var/lib/${LCWA_INSTANCE}/speedfiles"					
                                                             

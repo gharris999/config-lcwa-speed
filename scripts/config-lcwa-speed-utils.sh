@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240121.113352
+SCRIPT_VERSION=20240121.114218
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -154,7 +154,7 @@ function config_bash_aliases(){
 			$LCMD "$LALIASES" 'logs'			"pushd ${LCWA_LOGDIR}"
 			$LCMD "$LALIASES" 'data'			"pushd ${LCWA_DATADIR}"
 			$LCMD "$LALIASES" 'code'			"pushd ${LCWA_REPO_LOCAL}/src"
-			$LCMD "$LALIASES" 'config'			"pushd $LCWA_SUPREPO_LOCAL"
+			$LCMD "$LALIASES" 'config'			"pushd ${LCWA_SUPREPO_LOCAL}"
 		fi
 
 		if [ "$LUSER" = 'root' ]; then
@@ -468,6 +468,7 @@ else
 	if [ $? -gt 0 ]; then
 		error_echo "${SCRIPT_NAME} warning: could not include file ${INCLUDE_FILE}."
 	else
+		INST_NAME='lcwa-speed'
 		env_vars_defaults_get
 	fi
 fi

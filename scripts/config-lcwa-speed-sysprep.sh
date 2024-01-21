@@ -6,7 +6,7 @@
 # Latest mod: Config sysctl for auto reboots on kernel panics, add convenience bash aliases,
 # add sshd.conf settings to permit connections with old cyphers..
 ######################################################################################################
-SCRIPT_VERSION=20240121.113001
+SCRIPT_VERSION=20240121.113859
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -455,10 +455,6 @@ user_admin_remove(){
 	  /usr/sbin/groupdel "$LINST_GROUP" >/dev/null 2>&1
 	fi
 	
-}
-
-notquiet_error_echo(){
-	[ $QUIET -lt 1 ] && echo "$@" 1>&2;
 }
 
 config_sshd_oldhostkeys(){
