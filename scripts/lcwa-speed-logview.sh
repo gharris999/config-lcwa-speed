@@ -5,10 +5,11 @@
 #
 # Latest mod: 
 ######################################################################################################
-SCRIPT_VERSION=20240121.085047
+SCRIPT_VERSION=20240121.094408
 
 # Script to view the stdout & stderr lcwa-speed service logs and the CSV data file.
-SCRIPT="$(readlink -f "$0")"
+SCRIPT="$(realpath -s "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPT_NAME="$(basename "$SCRIPT")"
 SCRIPT_DESC="Script to view the lcwa-speed service stdout and stderr logs plus the current day's CSV file."
 

@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240121.085324
+SCRIPT_VERSION=20240121.092023
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -192,6 +192,7 @@ utility_scripts_install(){
 		LLINK="${LSCRIPT:14:7}"
 		LSOURCE="${LTARGET_DIR}/${LSCRIPT}"
 		LTARGET="${LCWA_LOGDIR}/${LLINK}"
+		[ -f "$LTARGET" ] && rm "$LTARGET"
 		[ $QUIET -lt 1 ] && error_echo "Linking ${LSOURCE} to ${LTARGET}"
 		[ $TEST -lt 1 ] && ln -s "$LSOURCE" "$LTARGET"
 	done

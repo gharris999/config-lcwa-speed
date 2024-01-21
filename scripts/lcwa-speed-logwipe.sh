@@ -3,13 +3,12 @@
 ######################################################################################################
 # Bash script for to wiping the stdout & stderr lcwa-speed service logs
 #
-# Latest mod: Add ability to wipe only stdout or stderr log
+# Latest mod: Add cmdline args to wipe only stdout or stderr log
 ######################################################################################################
-SCRIPT_VERSION=20240121.085401
+SCRIPT_VERSION=20240121.094408
 
-
-# Script to wipe the stdout & stderr lcwa-speed service logs
-SCRIPT="$(readlink -f "$0")"
+SCRIPT="$(realpath -s "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPT_NAME="$(basename "$SCRIPT")"
 SCRIPT_DISC="Script to wipe (truncate) the lcwa-speed service stdout and stderr logs.  Optionally wipes the current day's CSV file."
 

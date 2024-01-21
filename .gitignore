@@ -11,6 +11,7 @@ pppoe/
 rpi/
 src/
 speedfiles/
+temp/
 test_bins/
 
 scripts/bak
