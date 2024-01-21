@@ -7,7 +7,7 @@
 # Latest mod: Config sysctl for auto reboots on kernel panics, add convenience bash aliases,
 # add sshd.conf settings to permit connections with old cyphers..
 ######################################################################################################
-SCRIPT_VERSION=20240121.100517
+SCRIPT_VERSION=20240121.100716
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -461,6 +461,14 @@ user_admin_remove(){
 
 notquiet_error_echo(){
 	[ $QUIET -lt 1 ] && echo "$@" 1>&2;
+}
+
+function escape_var(){
+	VAR="$1"
+	# escape the escapes, escape the $s, escape the `s, escape the [s, escape the ]s, escape the "s
+	#~ ESCVAR="$(echo "$VAR" | sed -e 's/\\/\\\\/g;s/\$/\\\$/g;s/`/\\`/g;s/\[/\\\[/g;s/\]/\\\]/g;s/"/\\"/g')"
+	ESCVAR="$(echo "$VAR" | sed -e 's/\\/\\\\/g;s/\$/\\\$/g;s/`/\\`/g;s/"/\\"/g')"
+	echo $ESCVAR
 }
 
 function bash_alias_add(){
