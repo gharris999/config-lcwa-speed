@@ -7,7 +7,7 @@
 # Latest mod: Config sysctl for auto reboots on kernel panics, add convenience bash aliases,
 # add sshd.conf settings to permit connections with old cyphers..
 ######################################################################################################
-SCRIPT_VERSION=20240121.100058
+SCRIPT_VERSION=20240121.100517
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -880,10 +880,6 @@ rpi_fixups(){
 
 PRE_ARGS="$@"
 
-# Make sure we're running as root 
-is_root
-
-
 SHORTARGS='hdqvftar'
 
 LONGARGS="
@@ -919,24 +915,27 @@ do
 	case "$1" in
 		--)
 			;;
-		-h|--help)			# Displays this help
+		-h|--help)		# Displays this help
 			disp_help "$SCRIPT_DESC"
 			exit 0
 			;;
-		-d|--debug)			# Shows debugging info.
+		-d|--debug)		# Shows debugging info.
 			((DEBUG+=1))
 			;;
-		-q|--quiet)			# Supresses message output.
+		-q|--quiet)		# Supresses message output.
 			QUIET=1
 			;;
 		-v|--verbose)		# Increas message output.
 			((VERBOSE+=1))
 			;;
-		-f|--force)			# Inhibit rpi checks
+		-f|--force)		# Inhibit rpi checks
 			((FORCE+=1))
 			;;
-		-t|--test)			# Tests script logic without performing actions.
+		-t|--test)		# Tests script logic without performing actions.
 			((TEST+=1))
+			;;
+		-a|--alias)		# Install / update / remove (with --remove) bash aliases only.
+			ALIAS_INST_ONLY=1
 			;;
 		--no-hostname)		# Skips LCxx hostname checking
 			NO_CHANGE_HOSTNAME=1
@@ -947,9 +946,6 @@ do
 		--hostname)		#=NEWHOSTNAME -- change system hostname
 			shift
 			NEW_HOSTNAME="$1"
-			;;
-		-a|--alias)			# Install / update / remove (with --remove) bash aliases only.
-			ALIAS_INST_ONLY=1
 			;;
 		-r|--uninstall|--remove)	# Removes the 'admin' account. Doesn't uninstall basic utilities.
 			UNINSTALL=1
@@ -962,6 +958,9 @@ do
 done
 
 [ $VERBOSE -gt 0 ] && error_echo "${SCRIPTNAME} ${PRE_ARGS}"
+
+# Make sure we're running as root 
+is_root
 
 if [ $ALIAS_INST_ONLY -gt 0 ]; then
 	[ -z "$USERS" ] && USERS=$(cat /etc/passwd | grep -E '^.*/home/.*/bash$|^.*/root.*bash$' | sed -n -e 's/^\([^:]*\):.*$/\1/p' | sort | xargs )
