@@ -7,7 +7,7 @@
 # Latest mod: Config sysctl for auto reboots on kernel panics, add convenience bash aliases,
 # add sshd.conf settings to permit connections with old cyphers..
 ######################################################################################################
-SCRIPT_VERSION=20240121.095804
+SCRIPT_VERSION=20240121.100058
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -884,7 +884,7 @@ PRE_ARGS="$@"
 is_root
 
 
-SHORTARGS='hdqvftr'
+SHORTARGS='hdqvftar'
 
 LONGARGS="
 help,
@@ -893,6 +893,7 @@ quiet,
 verbose,
 test,
 force,
+alias,
 uninstall,remove,
 no-hostname,
 hostname:,
