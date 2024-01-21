@@ -1,8 +1,15 @@
 #!/bin/bash
+######################################################################################################
+# Bash script to update lcwa-speed git repo and restart service..
+#
+# Latest mod: Improvements to service name identification, git update checking, etc.
+######################################################################################################
+SCRIPT_VERSION=20240121.084901
+
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240121.084901
 
 INST_NAME='lcwa-speed'
 LCWA_ENVFILE="$INST_NAME"

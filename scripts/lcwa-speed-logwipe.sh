@@ -1,5 +1,13 @@
 #!/bin/bash
 
+######################################################################################################
+# Bash script for to wiping the stdout & stderr lcwa-speed service logs
+#
+# Latest mod: Add ability to wipe only stdout or stderr log
+######################################################################################################
+SCRIPT_VERSION=20240121.085401
+
+
 # Script to wipe the stdout & stderr lcwa-speed service logs
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_NAME="$(basename "$SCRIPT")"
@@ -36,14 +44,17 @@ if [ $? -gt 0 ]; then
     exit 1
 fi
 
+WIPE_LOG_STD=1
+WIPE_LOG_ERR=1
 WIPE_CSV=0
+
 NO_ROTATE=0
 NO_FIX_OWNER=0
 
 FNAME_DATE="$(date +%F)"
 
 SHORTARGS='hdvtwrn'
-LONGARGS="help,debug,verbose,test,wipe-csv,no-rotate,no-fix"
+LONGARGS="help,debug,verbose,test,wipe-std,wipe-err,wipe-csv,no-rotate,no-fix"
 
 ARGS=$(getopt -o "$SHORTARGS" -l "$LONGARGS" -n "$(basename $0)" -- "$@")
 
@@ -70,14 +81,24 @@ do
 	-t|--test)	# Operate in dry-run mode, i.e. don't actually truncate files.
 	    ((TEST+=1))
 	    ;;
-	-w|--wipe-csv)	# Wipe today's CSV data file too.
-	    WIPE_CSV=1
-	    ;;
 	-r|--no-rotate)	# Don't execute the log rotate script before wiping logs
 	    NO_ROTATE=1
 	    ;;
 	-n|--no-fix)	# Don't attempt to fixup file ownerships. By default, the script fixes ownership of the log & csv file directories.
 	    NO_FIX_OWNER=1
+	    ;;
+	--wipe-std)	# Only wipe the stdout log.
+	    WIPE_LOG_STD=1
+	    WIPE_LOG_ERR=0
+	    WIPE_CSV=0
+	    ;;
+	--wipe-err)	# Only wipe the stderr log.
+	    WIPE_LOG_STD=0
+	    WIPE_LOG_ERR=1
+	    WIPE_CSV=0
+	    ;;
+	--wipe-csv)	# Wipe today's CSV data file too.
+	    WIPE_CSV=1
 	    ;;
 
     esac
@@ -94,7 +115,6 @@ fi
 # Construct the CSV filename:
 LCWA_CSVFILE="${LCWA_DATADIR}/$(hostname | cut -c -4)_${FNAME_DATE}speedfile.csv"
 CSVFILE_NAME="$(basename "$LCWA_CSVFILE")"
-
 
 if [ $DEBUG -gt 1 ]; then
     echo ' '
@@ -117,25 +137,43 @@ if [ $DEBUG -gt 1 ]; then
     sleep 3
 fi
 
+# Create backups of the logfiles
+for LOG_FILE in "$LCWA_LOGFILE" "$LCWA_ERRFILE"
+do
+    if [ -f "$LOG_FILE" ]; then
+	echo "Creating backup of ${LOG_FILE}.."
+	[ $TEST -lt 1 ] && cp -p "$LOG_FILE" "${LOG_FILE}.bak"
+    else
+	echo "Creating file ${LOG_FILE}.."
+	[ $TEST -lt 1 ] && touch "$LOG_FILE"
+    fi
+done
+
 # Rotate the logs before wiping..
+# Warning: logrotate *may* delete stale logs..
 if [ $NO_ROTATE -lt 1 ]; then
     ROTATE_CONF_FILE="/etc/logrotate.d/${LCWA_SERVICE}"
     echo "Executing /etc/logrotate.d/${LCWA_SERVICE} log rotate script.."
     [ $TEST -lt 1 ] && logrotate -vf "$ROTATE_CONF_FILE"
 fi
 
-for LOG_FILE in "$LCWA_LOGFILE" "$LCWA_ERRFILE"
-do
-    if [ -f "$LOG_FILE" ]; then
-	echo "Creating backup of ${LOG_FILE}.."
-	[ $TEST -lt 1 ] && cp -p "$LOG_FILE" "${LOG_FILE}.bak"
-	echo "Truncating file ${LOG_FILE}.."
-	[ $TEST -lt 1 ] && truncate --size=0 "$LOG_FILE"
-    else
-	echo "Creating file ${LOG_FILE}.."
-	[ $TEST -lt 1 ] && touch "$LOG_FILE"
-    fi
-done
+# Wipe the stdout log..
+if [ $WIPE_LOG_STD -gt 0 ]; then
+    echo "Truncating file ${LCWA_LOGFILE}.."
+    [ $TEST -lt 1 ] && truncate --size=0 "$LCWA_LOGFILE"
+elif [ ! -f "$LCWA_LOGFILE" ]; then
+    # if we haven't wiped the log but logrotate has deleted it anyway,
+    #   restore it from a backup..
+    [ $TEST -lt 1 ] && cp -p "${LCWA_LOGFILE}.bak" "$LCWA_LOGFILE"
+fi    
+
+# Wipe the stderr log..
+if [ $WIPE_LOG_ERR -gt 0 ]; then
+    echo "Truncating file ${LCWA_ERRFILE}.."
+    [ $TEST -lt 1 ] && truncate --size=0 "$LCWA_ERRFILE"
+elif [ ! -f "$LCWA_ERRFILE" ]; then
+    [ $TEST -lt 1 ] && cp -p "${LCWA_ERRFILE}.bak" "$LCWA_ERRFILE"
+fi    
 
 # Only truncate the CSV file if we pass --wipe-csv arg
 if [ $WIPE_CSV -gt 0 ]; then
@@ -168,27 +206,26 @@ fi
 # Make sure the current CSV file has a header row!!
 echo "Checking for header row in ${CSVFILE_NAME}.."
 if [ $(head -n 1 "$LCWA_CSVFILE" | grep -c -E '^day,time,') -lt 1 ]; then
-	MY_IP="$(dig +short myip.opendns.com @resolver1.opendns.com)"
-	[ -z "$MY_IP" ] && MY_IP='63.233.220.21'
-	HEADER_ROW="day,time,server name,server id,latency,jitter,package,download,upload,latency measured,${MY_IP}"
+    MY_IP="$(dig +short myip.opendns.com @resolver1.opendns.com)"
+    [ -z "$MY_IP" ] && MY_IP='63.233.220.21'
+    HEADER_ROW="day,time,server name,server id,latency,jitter,package,download,upload,latency measured,${MY_IP}"
 
-	if [ $(cat "$LCWA_CSVFILE" | wc -l) -gt 0 ]; then
-		echo "Inserting header row into ${LCWA_CSVFILE}."
-		#~ [ $TEST -lt 1 ] && sed -i "1 i ${HEADER_ROW}" "$LCWA_CSVFILE"
-		[ $TEST -lt 1 ] && sed -i "1s/^/${HEADER_ROW}\n/" "$LCWA_CSVFILE"
-	else
-		echo "Appending header row onto empty ${LCWA_CSVFILE}."
-		[ $TEST -lt 1 ] && echo "$HEADER_ROW" >"$LCWA_CSVFILE"
-	fi
+    if [ $(cat "$LCWA_CSVFILE" | wc -l) -gt 0 ]; then
+	echo "Inserting header row into ${LCWA_CSVFILE}."
+	[ $TEST -lt 1 ] && sed -i "1s/^/${HEADER_ROW}\n/" "$LCWA_CSVFILE"
+    else
+	echo "Appending header row onto empty ${LCWA_CSVFILE}."
+	[ $TEST -lt 1 ] && echo "$HEADER_ROW" >"$LCWA_CSVFILE"
+    fi
 fi
 
 # Fix file ownership
 if [ $NO_FIX_OWNER -lt 1 ]; then
     echo "Fixing file ownership for ${LCWA_USER}:${LCWA_GROUP} in ${LCWA_LOGDIR}.."
-    chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LCWA_LOGDIR"
+    [ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LCWA_LOGDIR"
 
     echo "Fixing file ownership for ${LCWA_USER}:${LCWA_GROUP} in ${LCWA_DATADIR}.."
-    chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LCWA_DATADIR"
+    [ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LCWA_DATADIR"
 fi
 
 

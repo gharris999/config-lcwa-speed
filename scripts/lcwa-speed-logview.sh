@@ -1,4 +1,11 @@
 #!/bin/bash
+######################################################################################################
+# Bash script for viewing the stdout & stderr lcwa-speed service logs and the CSV data file.
+#   Requires the multitail package
+#
+# Latest mod: 
+######################################################################################################
+SCRIPT_VERSION=20240121.085047
 
 # Script to view the stdout & stderr lcwa-speed service logs and the CSV data file.
 SCRIPT="$(readlink -f "$0")"

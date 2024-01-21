@@ -1,9 +1,10 @@
 #!/bin/bash
-
 ######################################################################################################
-# Bash script for installing basic script utilities to /usr/local/sbin
+# Bash script for for installing lcwa-speed helper scripts & utilities to /usr/local/sbin
+#
+#	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240119.075835
+SCRIPT_VERSION=20240121.085324
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
