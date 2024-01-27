@@ -12,7 +12,6 @@ rpi/
 src/
 speedfiles/
 temp/
-test_bins/
 
 scripts/bak
 scripts/makelinks.sh
