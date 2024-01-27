@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240121.160750
+SCRIPT_VERSION=20240126.223455
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -15,7 +15,7 @@ SCRIPT_DESC="Installs basic bash scripts used by lcwa-speed to /usr/local/sbin"
 # Include the generic service install functions
 ######################################################################################################
 
-REC_INCSCRIPT_VER=20201220
+REC_INCSCRIPT_VER=20240126
 INCLUDE_FILE="$(dirname $(readlink -f $0))/instsrv_functions.sh"
 [ ! -f "$INCLUDE_FILE" ] && INCLUDE_FILE='/usr/local/sbin/instsrv_functions.sh'
 
@@ -180,6 +180,80 @@ function config_bash_aliases(){
 	debug_echo "${FUNCNAME} done"
 }
 
+rclocal_unit_fix(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LUNIT="${1:-/lib/systemd/system/rc-local.service}"
+	local LRET=2
+	
+	if [ ! -f "$LUNIT" ]; then
+		echo "${SCRIPT} Error: ${LUNIT} service unit file not found."
+		return 1
+	fi
+
+	# Make backups..
+	if [ ! -f "${LUNIT}.org" ]; then
+		cp -p "$LUNIT" "${LUNIT}.org"
+	fi
+
+	cp -p "$LUNIT" "${LUNIT}.bak"
+	
+	# What we want:
+	#  After=network-online.target
+	#  Wants=network-online.target
+
+	# Change systemd service unit so that rc.local only fires up after the network is up..
+	if [ $(grep -c -E '^After=.*network-online.target' "$LUNIT") -lt 1 ]; then
+
+		if [ $(grep -c -E '^After=.*network.target' "$LUNIT") -gt 0 ]; then
+			# In-place replacement
+			error_echo "Changing After=network.target to After=network-online.target in ${LUNIT}"
+			[ $TEST -lt 2 ] && sed -i -e 's/After=.*network.target/After=network-online.target/' "$LUNIT"
+		else
+			# Insert the line:
+			error_echo "Adding After=network-online.target to After=network-online.target in ${LUNIT}"
+			[ $TEST -lt 2 ] && sed -i -e '/^\[Unit\]/,/^$/s/^$/After=network-online.target\n/g' "$LUNIT"
+		fi
+	fi
+	
+	if [ $(grep -c -E '^After=.*network-online.target' "$LUNIT") -lt 1 ]; then
+		error_echo "Error adding After=network-online.target to ${LUNIT}.."
+	else
+		((LRET-=1))
+	fi
+			
+	# Change systemd service unit so that rc.local only fires up after the network is up..
+	if [ $(grep -c -E '^Wants=.*network-online.target' "$LUNIT") -lt 1 ]; then
+	
+		if [ $(grep -c -E '^Wants=.*network.target' "$LUNIT") -gt 0 ]; then
+			# In-place replacement
+			error_echo "Changing Wants=network.target to Wants=network-online.target in ${LUNIT}"
+			[ $TEST -lt 2 ] && sed -i -e 's/Wants=.*network.target/Wants=network-online.target/' "$LUNIT"
+		else
+			# Insert the line:
+			error_echo "Adding Wants=network-online.target to After=network-online.target in ${LUNIT}"
+			[ $TEST -lt 2 ] && sed -i -e '/^\[Unit\]/,/^$/s/^$/Wants=network-online.target\n/g' "$LUNIT"
+		fi
+	fi
+
+	if [ $(grep -c -E '^Wants=.*network-online.target' "$LUNIT") -lt 1 ]; then
+		error_echo "Error adding Wants=network-online.target to ${LUNIT}.."
+	else
+		((LRET-=1))
+	fi
+
+	if [ $LRET -eq 0 ]; then
+		[ $TEST -lt 1 ] && systemctl daemon-reload
+		#~ [ $TEST -lt 1 ] && systemctl enable $(basename "$LUNIT")
+		error_echo "Change successful."
+	else
+		error_echo "Change unsuccessful! LRET == ${LRET}"
+		return 1
+	fi
+	
+	return $LRET
+}
+
+
 ######################################################################################################
 # rclocal_create() Create the /etc/rc.local file to check the subnet
 ######################################################################################################
@@ -198,37 +272,76 @@ rclocal_create(){
 
 	[ $QUIET -lt 1 ] && error_echo "Creating ${RCLOCAL}.."
 
+	if [ $IS_RASPBIAN -gt 0 ] && [ $TEST -lt 1 ]; then
+		cat >"$RCLOCAL" <<-RCLOCAL0;
+		#!/bin/sh -e
+		#
+		# rc.local
+		#
+		# This script is executed at the end of each multiuser runlevel.
+		# Make sure that the script will "exit 0" on success or any other
+		# value on error.
+		#
+		# In order to enable or disable this script just change the execution
+		# bits.
+		#
+		# By default this script does nothing.
 
-	[ $TEST -lt 1 ] && cat >"$RCLOCAL" <<-RCLOCAL1;
-	#!/bin/sh -e
-	#
-	# rc.local
-	#
-	# This script is executed at the end of each multiuser runlevel.
-	# Make sure that the script will "exit 0" on success or any other
-	# value on error.
-	#
-	# In order to enable or disable this script just change the execution
-	# bits.
-	#
-	# By default this script does nothing.
+		########################################################################################
+		# ALWAYS fix the /tmp directory
+		########################################################################################
+		chmod 1777 /tmp
 
-	########################################################################################
-	# ALWAYS fix the /tmp directory
-	########################################################################################
-	chmod 1777 /tmp
+		########################################################################################
+		# Disable wifi and bluetooth
+		########################################################################################
+		rfkill block wifi
+		rfkill block bluetooth
 
-	########################################################################################
-	#
-	# Check the current network connection. If the subnet has changed, reconfigure the
-	# firewall.
-	#
-	########################################################################################
+		########################################################################################
+		#
+		# Check the current network connection. If the subnet has changed, reconfigure the
+		# firewall.
+		#
+		########################################################################################
 
-	/usr/local/sbin/lcwa-speed-fwck.sh --verbose --minimal --public
+		/usr/local/sbin/lcwa-speed-fwck.sh --verbose --minimal --public
 
-	exit 0
-	RCLOCAL1
+		exit 0
+		RCLOCAL0
+	elif [ $TEST -lt 1 ]; then
+
+		cat >"$RCLOCAL" <<-RCLOCAL1;
+		#!/bin/sh -e
+		#
+		# rc.local
+		#
+		# This script is executed at the end of each multiuser runlevel.
+		# Make sure that the script will "exit 0" on success or any other
+		# value on error.
+		#
+		# In order to enable or disable this script just change the execution
+		# bits.
+		#
+		# By default this script does nothing.
+
+		########################################################################################
+		# ALWAYS fix the /tmp directory
+		########################################################################################
+		chmod 1777 /tmp
+
+		########################################################################################
+		#
+		# Check the current network connection. If the subnet has changed, reconfigure the
+		# firewall.
+		#
+		########################################################################################
+
+		/usr/local/sbin/lcwa-speed-fwck.sh --verbose --minimal --public
+
+		exit 0
+		RCLOCAL1
+	fi
 
 	[ $TEST -lt 1 ] && chmod 755 "$RCLOCAL"
 
@@ -335,6 +448,7 @@ utility_scripts_install(){
 	done
 	
 	rclocal_create
+	rclocal_unit_fix '/lib/systemd/system/rc-local.service'
 
 }
 

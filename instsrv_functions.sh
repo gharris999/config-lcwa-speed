@@ -8,7 +8,7 @@
 #   dependent services properly wait until network is up before starting.
 #   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
 ######################################################################################################
-INCSCRIPT_VERSION=20240120.101406
+INCSCRIPT_VERSION=20240126.110349
 
 SCRIPT_NAME=$(basename -- "$0")
 
@@ -76,6 +76,9 @@ UBUNTU_VER=0
 UBUNTU_NAME=
 IS_FOCAL=0			# if Ubuntu ver >= 20.04, IS_FOCAL=1
 IS_RHINO=0
+IS_RASPBIAN=0
+RASPBIAN_VER=0
+RASPBIAN_NAME=
 IS_FEDORA=0
 FEDORA_VER=0
 FEDORA_NAME=
@@ -242,7 +245,12 @@ if [[ $IS_DEBIAN -gt 0 ]]; then
 			IS_FOCAL=0
 		fi
 	fi
-	
+
+	IS_RASPBIAN=$(grep -c -E '^NAME="Raspbian.*"' /etc/os-release 2>/dev/null)
+	if [ $IS_RASPBIAN -gt 0 ]; then
+		RASPBIAN_VER="$(cat /etc/os-release | grep 'VERSION_ID=' | sed -n -e 's/^.*=\(.*\)$/\1/p' | tr -d '"')"
+		RASPBIAN_NAME="$(cat /etc/os-release | grep 'PRETTY_NAME=' | sed -n -e 's/^.*=\(.*\)$/\1/p' | tr -d '"')"
+	fi
 	
 	# Test to see if this is a Rolling Rhino Remix install
 	IS_RHINO="$(grep -c -E '^PRETTY_NAME=.*Rhino.*' /etc/os-release 2>/dev/null)"
@@ -6091,6 +6099,9 @@ systype_disp(){
 	echo "UBUNTU_VER       == ${UBUNTU_VER}"
 	echo "UBUNTU_NAME      == ${UBUNTU_NAME}"
 	echo "IS_FOCAL         == ${IS_FOCAL}"
+	echo "IS_RASPBIAN      == ${IS_RASPBIAN}"
+	echo "RASPBIAN_VER     == ${RASPBIAN_VER}"
+	echo "RASPBIAN_NAME    == ${RASPBIAN_NAME}"
 	echo "IS_RHINO         == ${IS_RHINO}"
 	echo "IS_FEDORA        == ${IS_FEDORA}"
 	echo "FEDORA_VER       == ${FEDORA_VER}"

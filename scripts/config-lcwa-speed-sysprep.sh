@@ -6,7 +6,7 @@
 # Latest mod: Config sysctl for auto reboots on kernel panics, add convenience bash aliases,
 # add sshd.conf settings to permit connections with old cyphers..
 ######################################################################################################
-SCRIPT_VERSION=20240121.113859
+SCRIPT_VERSION=20240126.223628
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -523,7 +523,7 @@ is_raspberry_pi(){
 		return 1
 	fi
 
-	# Raspbian GNU/Linux 10 (buster) & Raspbian GNU/Linux 11 (bullseye)
+	# Raspbian GNU/Linux 10 (buster) & Raspbian GNU/Linux 11 (bullseye) & Raspbian GNU/Linux 12 (bookworm)
 	LIS_RPI=$(lsb_release -sd | grep -c 'Raspbian')
 
 	if [ $LIS_RPI -lt 1 ]; then
@@ -684,17 +684,20 @@ rpi_fixups(){
 	####################################################################
 	# Set the locale
 	local LMY_LOCALE='en_US.UTF-8'
-	     DEBLANGUAGE="en_US.UTF-8"
-	
+	DEBLANGUAGE="en_US.UTF-8"
+
 	if [ $DEBUG -gt 1 ]; then
 		error_echo ' '
 		error_echo "System locale before:"
 		locale
 		error_echo ' '
 	fi
-	
-	#~ rpi_setting_change do_change_locale "$LMY_LOCALE"
-	rpi_locale_set "$LMY_LOCALE"
+
+	# Only change locale if not already correctly set
+	if [ $(grep -c "^${LMY_LOCALE} .*\$" /etc/locale.gen) -lt 1 ]; then
+		#~ rpi_setting_change do_change_locale "$LMY_LOCALE"
+		rpi_locale_set "$LMY_LOCALE"
+	fi
 	
 	if [ $DEBUG -gt 1 ]; then
 		error_echo ' '
@@ -707,21 +710,30 @@ rpi_fixups(){
 	# Configure the keyboard
 	#~ rpi_setting_change do_configure_keyboard "pc101" "us"
 	local LMY_KBD='us'
-	[ $QUIET -lt 1 ] && error_echo "Changing keyboard layout to ${LMY_KBD}.."
-	rpi_setting_change do_configure_keyboard "$LMY_KBD"
+
+	if [ $(grep -c -E "^XKBLAYOUT=\"${LMY_KBD}\"" /etc/default/keyboard) -lt 1 ]; then
+		[ $QUIET -lt 1 ] && error_echo "Changing keyboard layout to ${LMY_KBD}.."
+		rpi_setting_change do_configure_keyboard "$LMY_KBD"
+	fi
 
 	####################################################################
 	# Set the wifi interface country code
 	local LMY_WIFICO='US'
-	[ $QUIET -lt 1 ] && error_echo "Changing wifi country code to ${LMY_WIFICO}.."
-	rpi_setting_change do_wifi_country "$LMY_WIFICO"
+
+	if [ $(iw reg get | grep -c "country ${LMY_WIFICO}:") -lt 1 ]; then
+		[ $QUIET -lt 1 ] && error_echo "Changing wifi country code to ${LMY_WIFICO}.."
+		rpi_setting_change do_wifi_country "$LMY_WIFICO"
+	fi
 
 	####################################################################
 	# Reset the system timezone from GMT to local
 	local LMY_TZ="$(timezone_get)"
 	if [ ! -z "$LMY_TZ" ]; then
-		[ $QUIET -lt 1 ] && error_echo "Changing timezone to ${LMY_TZ}.."
-		rpi_setting_change do_change_timezone "$LMY_TZ"
+		# Check to see if TZ is already correct
+		if [ $(timedatectl status | grep -c -E "Time zone: ${LMY_TZ} (.*)\$") -lt 1 ]; then
+			[ $QUIET -lt 1 ] && error_echo "Changing timezone to ${LMY_TZ}.."
+			rpi_setting_change do_change_timezone "$LMY_TZ"
+		fi
 	fi
 	
 	####################################################################
