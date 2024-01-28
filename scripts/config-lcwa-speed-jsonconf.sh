@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script creating the config.json file required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 ######################################################################################################
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240127.164237
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -50,6 +50,16 @@ INST_DESC='LCWA PPPoE Speedtest Logger Daemon'
 INST_INSTANCE_NAME=
 INST_SERVICE_NAME=
 INST_REPO_CONFIG_JSON=
+
+INST_RUNMODE="Speedtest"
+INST_OOKLA_SERVERID='10056'
+INST_IPERF_SERVERIP='63.229.162.245'
+INST_IPERF_DURATION=10
+# Ookla Speedtest server at CyberMesa
+INST_LATENCY_SERVER='65.19.14.51'
+# *60 == run_loop
+#~ INST_TIMEWINDOW=10
+
 
 
 ######################################################################################################
@@ -316,10 +326,21 @@ clustercontrol_update(){
 	
 	debug_cat "$LLCWA_CONFFILE" "Done merging ClusterControl from ${LREPO_CONFFILE} to ${LLCWA_CONFFILE}: "
 
+	####################################################################################################################
+	####################################################################################################################
 	# Make modifications to the ClusterControl blocks
-	#	Make all runmodes "Both"
-	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to runmode=\"Both\""
-	json_modify "$LLCWA_CONFFILE" '.ClusterControl[].runmode |="Both"'
+
+	#~ INST_RUNMODE="Speedtest"
+	#~ INST_OOKLA_SERVERID='10056'
+	#~ INST_IPERF_SERVERIP='63.229.162.245'
+	#~ INST_IPERF_DURATION=10
+	#~ INST_LATENCY_SERVER='65.19.14.51'
+	
+
+	####################################################################################################################
+	#	Update runmodes..
+	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to runmode=\"${INST_RUNMODE}\""
+	json_modify "$LLCWA_CONFFILE" ".ClusterControl[].runmode |=\"${INST_RUNMODE}\""
 	LRET=$?
 	
 	if [ $LRET -gt 0 ]; then
@@ -328,12 +349,43 @@ clustercontrol_update(){
 		[ -f "$LTEMP_JSON" ] && rm "$LTEMP_JSON"
 		return 1
 	else 
-		debug_cat "$LLCWA_CONFFILE" "Done fixing ${LLCWA_CONFFILE} ClusterControl keys runmode=\"Both\": "
+		debug_cat "$LLCWA_CONFFILE" "Done fixing ${LLCWA_CONFFILE} ClusterControl keys runmode=\"${INST_RUNMODE}\": "
 	fi
 	
-	#	Make all iperf_duration "10"
-	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to nondefault.iperf_duration=\"10\""
-	json_modify "$LLCWA_CONFFILE" '.ClusterControl[].nondefault.iperf_duration |=10'
+	####################################################################################################################
+	#	Update the speedtest serverids
+	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to nondefault.serverid=${INST_OOKLA_SERVERID}"
+	json_modify "$LLCWA_CONFFILE" ".ClusterControl[].nondefault.serverid |=${INST_OOKLA_SERVERID}"
+	LRET=$?
+	
+	if [ $LRET -gt 0 ]; then
+		error_echo "${FUNCNAME}() Error: Could not modify ${LLCWA_CONFFILE} ClusterControl keys .nondefault.serverid value."
+		debug_cat "$LTEMP_JSON" "${FUNCNAME}() "
+		[ -f "$LTEMP_JSON" ] && rm "$LTEMP_JSON"
+		return 1
+	else 
+		debug_cat "$LLCWA_CONFFILE" "Done fixing ${LLCWA_CONFFILE} ClusterControl keys nondefault.iperf_duration=\"10\": "
+	fi
+	
+	####################################################################################################################
+	#	Update the iperf3 server_ip
+	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to nondefault.iperf_serverip=\"${INST_IPERF_SERVERIP}\""
+	json_modify "$LLCWA_CONFFILE" ".ClusterControl[].nondefault.iperf_serverip |=\"${INST_IPERF_SERVERIP}\""
+	LRET=$?
+	
+	if [ $LRET -gt 0 ]; then
+		error_echo "${FUNCNAME}() Error: Could not modify ${LLCWA_CONFFILE} ClusterControl keys .nondefault.iperf_serverip value."
+		debug_cat "$LTEMP_JSON" "${FUNCNAME}() "
+		[ -f "$LTEMP_JSON" ] && rm "$LTEMP_JSON"
+		return 1
+	else 
+		debug_cat "$LLCWA_CONFFILE" "Done fixing ${LLCWA_CONFFILE} ClusterControl keys nondefault.iperf_serverip=\"${INST_IPERF_SERVERIP}\": "
+	fi
+	
+	####################################################################################################################
+	#	Update the iperf3 duration
+	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to nondefault.iperf_duration=${INST_IPERF_DURATION}"
+	json_modify "$LLCWA_CONFFILE" ".ClusterControl[].nondefault.iperf_duration |=${INST_IPERF_DURATION}"
 	LRET=$?
 	
 	if [ $LRET -gt 0 ]; then
@@ -342,38 +394,73 @@ clustercontrol_update(){
 		[ -f "$LTEMP_JSON" ] && rm "$LTEMP_JSON"
 		return 1
 	else 
-		debug_cat "$LLCWA_CONFFILE" "Done fixing ${LLCWA_CONFFILE} ClusterControl keys nondefault.iperf_duration=\"10\": "
+		debug_cat "$LLCWA_CONFFILE" "Done fixing ${LLCWA_CONFFILE} ClusterControl keys nondefault.iperf_duration=${INST_IPERF_DURATION}: "
 	fi
 	
-	# Create a ClusterControl block for ourselves
+	####################################################################################################################
+	#	Update the latency server_ips
+	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to nondefault.latency_ip=\"${INST_LATENCY_SERVER}\""
+	json_modify "$LLCWA_CONFFILE" ".ClusterControl[].nondefault.iperf_latency_ip |=\"${INST_LATENCY_SERVER}\""
+	LRET=$?
 	
+	if [ $LRET -gt 0 ]; then
+		error_echo "${FUNCNAME}() Error: Could not modify ${LLCWA_CONFFILE} ClusterControl keys .nondefault.latency_ip value."
+		debug_cat "$LTEMP_JSON" "${FUNCNAME}() "
+		[ -f "$LTEMP_JSON" ] && rm "$LTEMP_JSON"
+		return 1
+	else 
+		debug_cat "$LLCWA_CONFFILE" "Done fixing ${LLCWA_CONFFILE} ClusterControl keys nondefault.latency_ip=\"${INST_LATENCY_SERVER}\": "
+	fi
+	
+	[ $QUIET -lt 1 ] && error_echo "Modifying all ${LLCWA_CONFFILE} ClusterControl keys to nondefault.iperf_latency_ip=\"${INST_LATENCY_SERVER}\""
+	json_modify "$LLCWA_CONFFILE" ".ClusterControl[].nondefault.iperf_latency_ip |=\"${INST_LATENCY_SERVER}\""
+	LRET=$?
+	
+	if [ $LRET -gt 0 ]; then
+		error_echo "${FUNCNAME}() Error: Could not modify ${LLCWA_CONFFILE} ClusterControl keys .nondefault.iperf_latency_ip value."
+		debug_cat "$LTEMP_JSON" "${FUNCNAME}() "
+		[ -f "$LTEMP_JSON" ] && rm "$LTEMP_JSON"
+		return 1
+	else 
+		debug_cat "$LLCWA_CONFFILE" "Done fixing ${LLCWA_CONFFILE} ClusterControl keys nondefault.iperf_latency_ip=\"${INST_LATENCY_SERVER}\": "
+	fi
+	
+	####################################################################################################################
+	####################################################################################################################
+	# Create a ClusterControl block for ourselves
 	LHOSTNAME="$(hostname)"
 	
 	# Are we an 'LC' box? If so, truncate our identifier at 4 characters..
 	[ "$(echo "$LHOSTNAME" | grep -c -E "^LC[[:digit:]]{2}")" -gt 0 ] && LHOSTNAME="${LHOSTNAME:0:4}"
 	
-	# Do we already have a cluster control block?
-	
+	# If we don't already have a cluster control block..
 	if [ "$("$LJQ" ".ClusterControl.${LHOSTNAME}" $LLCWA_CONFFILE)" = 'null' ]; then
 
 		[ $QUIET -lt 1 ] && error_echo "Creating ClusterControl block for ${LHOSTNAME}.."
+
+		#~ INST_RUNMODE="Speedtest"
+		#~ INST_OOKLA_SERVERID='10056'
+		#~ INST_IPERF_SERVERIP='63.229.162.245'
+		#~ INST_IPERF_DURATION=10
+		#~ # Ookla Speedtest server at CyberMesa
+		#~ INST_LATENCY_SERVER='65.19.14.51'
 
 		cat <<- EOF_JSON2 | "$LJQ" '.' >"$LTEMP_JSON"
 		{
 		  "ClusterControl": {
 			"${LHOSTNAME}": {
-			  "runmode": "Both",
+			  "runmode": "${INST_RUNMODE}",
 			  "nondefault": {
 				"server_ip": "63.229.162.245",
-				"serverid": 18002,
+				"serverid": ${INST_OOKLA_SERVERID},
 				"time_window": 10,
-				"latency_ip": "65.19.14.51",
+				"latency_ip": "${INST_LATENCY_SERVER}",
 				"iperf_serverport": "5201",
-				"iperf_serverip": "63.229.162.245",
-				"iperf_duration": 10,
+				"iperf_serverip": "${INST_IPERF_SERVERIP}",
+				"iperf_duration": ${INST_IPERF_DURATION},
 				"iperf_numstreams": 2,
 				"iperf_blksize": 1024,
-				"iperf_latency_ip": "65.19.14.51",
+				"iperf_latency_ip": "${INST_LATENCY_SERVER}",
 				"iperf_time_window": 10,
 				"iperf_reverse": false,
 				"random": false
@@ -436,7 +523,7 @@ config_json_create(){
 	local LCONF_JSON_FILE="${1:-${LCWA_CONFFILE}}"
 	local LSRC_DIR="${2:-${LCWA_REPO_LOCAL}/src}"
 	local LDATA_DIR="${3:-${LCWA_DATADIR}}"
-	local LRUN_MODE="${4:-Both}"
+	local LRUN_MODE="${4:-${INST_RUNMODE}}"
 	local LCONF_DIR="${5:-${LCWA_CONFDIR}}"
 	local LTIMEOUT_BIN="$(which timeout)"
 	local LOOKLA_BIN="$(which speedtest)"
@@ -491,6 +578,13 @@ config_json_create(){
 	
 	[ $QUIET -lt 1 ] && error_echo "Creating ${LCONF_JSON_FILE}.."
 
+	#~ INST_RUNMODE="Speedtest"
+	#~ INST_OOKLA_SERVERID='10056'
+	#~ INST_IPERF_SERVERIP='63.229.162.245'
+	#~ INST_IPERF_DURATION=10
+	#~ # Ookla Speedtest server at CyberMesa
+	#~ INST_LATENCY_SERVER='65.19.14.51'
+
 
 	# Write our initial conf.json using our corrected paths..
 	cat <<- EOF_JSON1 | "$LJQ" '.' >"$LCONF_JSON_FILE"
@@ -518,19 +612,19 @@ config_json_create(){
 	  },
 	  "Iperf": {
 		"iperf_serverport": "5201",
-		"iperf_serverip": "63.229.162.245",
-		"iperf_duration": 10,
+		"iperf_serverip": "${INST_IPERF_SERVERIP}",
+		"iperf_duration": ${INST_IPERF_DURATION},
 		"iperf_numstreams": 2,
 		"iperf_blksize": 1024,
-		"iperf_latency_ip": "65.19.14.51",
+		"iperf_latency_ip": "${INST_LATENCY_SERVER}",
 		"iperf_time_window": 10,
 		"iperf_reverse": false
 	  },
 	  "Speedtest": {
 		"serverip": "63.229.162.245",
-		"serverid": 10056,
+		"serverid": ${INST_OOKLA_SERVERID},
 		"time_window": 10,
-		"latency_ip": "65.19.14.51"
+		"latency_ip": "${INST_LATENCY_SERVER}"
 	  }
 	}
 	EOF_JSON1
@@ -629,8 +723,14 @@ is_root
 # Declare our environmental variables and zero them..
 env_vars_zero $(env_vars_name)
 
+INST_RUNMODE="Speedtest"
+INST_OOKLA_SERVERID='10056'
+INST_IPERF_SERVERIP='63.229.162.245'
+INST_IPERF_DURATION=10
 
-SHORTARGS='hdqvftk'
+
+
+SHORTARGS='hdqvftm:s:i:r:y:k'
 LONGARGS="
 help,
 debug,
@@ -638,6 +738,11 @@ quiet,
 verbose,
 test,
 force,
+runmode:,
+ookla-serverid:,
+iperf_serverip:,
+iperf-duration:,
+latency-server:,
 inst-name:,
 service-name:,
 env-file:"
@@ -678,6 +783,56 @@ do
 			;;
 		-t|--test)		# Test mode -- -tt will create json in ${SCRIPT_DIR}
 			((TEST+=1))
+			;;
+		-m|--runmode)		# =Speedtest|Iperf|Both -- Sets the runmode for the tests
+			shift
+			if [ $(echo "$1" | grep -c -E '^Speedtest$|^Iperf$|^Both$') -gt 0 ]; then
+				INST_RUNMODE="$1"
+			else
+				error_echo "${SCRIPT_NAME} error: ${1} is not a valid runmode. Exiting."
+				disp_help "$SCRIPT_DESC" "[ env-file ]"
+				exit 1
+			fi
+			;;
+		-s|--ookla-serverid)	# =number -- sets the default ookla serverid to test against.
+			shift
+			if [[ "$1" =~ ^[0-9]+$ ]]; then
+				INST_OOKLA_SERVERID="$1"
+			else
+				error_echo "${SCRIPT_NAME} error: ${1} is not a serverid number. Exiting."
+				disp_help "$SCRIPT_DESC" "[ env-file ]"
+				exit 1
+			fi
+			;;
+		-i|--iperf_serverip)	# =ip_address -- Address of the iperf3 server to test against
+			shift
+			if ipaddr_is_valid "$1"; then
+				INST_IPERF_SERVERIP="$1"
+			else
+				error_echo "${SCRIPT_NAME} error: ${1} is not a valid iperf3 server ipv4 address. Exiting."
+				disp_help "$SCRIPT_DESC" "[ env-file ]"
+				exit 1
+			fi
+			;;
+		-r|--iperf-duration)	# =number -- sets the number of seconds the iperf3 test runs
+			shift
+			if [[ "$1" =~ ^[0-9]+$ ]]; then
+				INST_IPERF_DURATION="$1"
+			else
+				error_echo "${SCRIPT_NAME} error: ${1} is not a valid number of seconds. Exiting."
+				disp_help "$SCRIPT_DESC" "[ env-file ]"
+				exit 1
+			fi
+			;;
+		-y|--latency-server)	# =ip_address -- Address of a http server to test against for latency
+			shift
+			if ipaddr_is_valid "$1"; then
+				INST_LATENCY_SERVER="$1"
+			else
+				error_echo "${SCRIPT_NAME} error: ${1} is not a valid latency server ipv4 address. Exiting."
+				disp_help "$SCRIPT_DESC" "[ env-file ]"
+				exit 1
+			fi
 			;;
 		--inst-name)		# =NAME -- Instance name that defines the install location: /usr/local/share/NAME and user account name -- defaults to lcwa-speed.
 			shift

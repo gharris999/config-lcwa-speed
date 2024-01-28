@@ -96,7 +96,7 @@ env_file_exists(){
 
 # Command-line arguments for the daemon
 #~ LCWA_OPTIONS="--conf ${LCWA_CONFFILE}"
-#~ LCWA_DEBUG_OPTIONS="--conf ${LCWA_CONFFILE} --time 1 --nowait --testdb"
+#~ LCWA_DEBUG_OPTIONS="--conf ${LCWA_CONFFILE} --time 1 --nowait --testdb --verbosity 2"
 
 #~ LCWA_EXEC_ARGS="\$LCWA_OPTIONS"
 #~ LCWA_EXEC_ARGS_DEBUG="--adebug \$LCWA_OPTIONS"
@@ -232,7 +232,7 @@ function env_vars_defaults_get(){
                                                             
 # Command-line arguments for the daemon                     
 [ -z "$LCWA_OPTIONS" ] 				&&  LCWA_OPTIONS="--conf ${LCWA_CONFFILE}"
-[ -z "$LCWA_DEBUG_OPTIONS" ]		&&  LCWA_DEBUG_OPTIONS="--conf ${LCWA_CONFFILE} --time 1 ---nowait --testdb"
+[ -z "$LCWA_DEBUG_OPTIONS" ]		&&  LCWA_DEBUG_OPTIONS="--conf ${LCWA_CONFFILE} --time 1 ---nowait --testdb --verbosity 2"
 [ -z "$LCWA_EXEC_ARGS" ] 			&&  LCWA_EXEC_ARGS="$LCWA_OPTIONS"
 [ -z "$LCWA_EXEC_ARGS_DEBUG" ] 		&&  LCWA_EXEC_ARGS_DEBUG="--adebug \$LCWA_OPTIONS"
                                                             
