@@ -6,7 +6,7 @@
 #
 #	Latest mod: Kludge fix for unreliable rpi pip3 numpy package
 ######################################################################################################
-SCRIPT_VERSION=20240127.181612
+SCRIPT_VERSION=20240127.184139
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -694,9 +694,10 @@ python_libs_install(){
 				
 		LPKG_LIST="$(echo $LPKG_LIST | xargs)"
 
-		# with Raspbian GNU/Linux 12, the pip3 installed numpy library throws exceptions.
-		# We'll overwrite the pip3 installed version with the system version.
-		[ $IS_RASPBIAN -gt 0 ] && LPKG_LIST="${LPKG_LIST} python3-numpy"
+		# with Raspbian GNU/Linux 12, the pip3 installed pandas library throws the exception:
+		# libopenblas.so.0: cannot open shared object file: No such file or directory
+		#  --libopenblas.so.0 is required by the pandas dependency numpy
+		[ $IS_RASPBIAN -gt 0 ] && LPKG_LIST="${LPKG_LIST} libopenblas0"
 		[ $QUIET -gt 0 ] && error_echo "Checking package list.."
 
 		LPKG_LIST="$(pkg_check "$LPKG_LIST")"
@@ -792,25 +793,25 @@ python_libs_install(){
 	pip_libs_install "$INST_PIP3" "$INST_USER" "${LLCWA_HOMEDIR}/.cache/pip" "$LPYTHON_LIBS"
 
 	# Fix for broken pip3 installed numpy package on RaspbianOS
-	if [ $IS_RASPBIAN -gt 0 ]; then
-		error_echo "Fixing broken RaspbianOS pip3 installed numpy package.."
-		local LSOURCE_DIR='/usr/lib/python3/dist-packages/numpy'
-		local LPYTHON3_VER="$(basename "$(readlink -f "$(which python3)")")"
-		local LTARGET_DIR="${LCWA_INSTDIR}/${PYTHON3_VER}/site-packages/numpy"
+	#~ if [ $IS_RASPBIAN -gt 0 ]; then
+		#~ error_echo "Fixing broken RaspbianOS pip3 installed numpy package.."
+		#~ local LSOURCE_DIR='/usr/lib/python3/dist-packages/numpy'
+		#~ local LPYTHON3_VER="$(basename "$(readlink -f "$(which python3)")")"
+		#~ local LTARGET_DIR="${LCWA_INSTDIR}/${PYTHON3_VER}/site-packages/numpy"
 		
-		if [ -d "$LSOURCE_DIR" ] && [ ! -z "$LPYTHON3_VER" ]; then
-			[ ! -d "$LTARGET_DIR" ] && [ $TEST -lt 1 ] && mkdir -p "$LTARGET_DIR"
+		#~ if [ -d "$LSOURCE_DIR" ] && [ ! -z "$LPYTHON3_VER" ]; then
+			#~ [ ! -d "$LTARGET_DIR" ] && [ $TEST -lt 1 ] && mkdir -p "$LTARGET_DIR"
 
-			[ $TEST -lt 1 ] && rsync  --links --perms --times --group --owner --devices \
-				   --specials --stats --progress --verbose --info=skip0 \
-				   --recursive --include='*/' --include='*' --exclude='*' \
-				   "$LSOURCE_DIR" "$LTARGET_DIR"
-			error_echo "Setting permissions on ${LTARGET_DIR}"
-			[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LTARGET_DIR"
-		else
-			error_echo "${FUNCNAME}() error: Cannot find system numpy libs!"
-		fi
-	fi
+			#~ [ $TEST -lt 1 ] && rsync  --links --perms --times --group --owner --devices \
+				   #~ --specials --stats --progress --verbose --info=skip0 \
+				   #~ --recursive --include='*/' --include='*' --exclude='*' \
+				   #~ "$LSOURCE_DIR" "$LTARGET_DIR"
+			#~ error_echo "Setting permissions on ${LTARGET_DIR}"
+			#~ [ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LTARGET_DIR"
+		#~ else
+			#~ error_echo "${FUNCNAME}() error: Cannot find system numpy libs!"
+		#~ fi
+	#~ fi
 	
 	# 20210505: Make the /var/lib/lcwa-speed/.config/matplotlib/ directory writeable..
 	[ $TEST -lt 1 ] && mkdir -p "${LLCWA_HOMEDIR}/.config/matplotlib"
