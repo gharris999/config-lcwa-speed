@@ -6,7 +6,7 @@
 #
 #	Latest mod: Kludge fix for unreliable rpi pip3 numpy package
 ######################################################################################################
-SCRIPT_VERSION=20240127.180429
+SCRIPT_VERSION=20240127.181612
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -805,6 +805,7 @@ python_libs_install(){
 				   --specials --stats --progress --verbose --info=skip0 \
 				   --recursive --include='*/' --include='*' --exclude='*' \
 				   "$LSOURCE_DIR" "$LTARGET_DIR"
+			error_echo "Setting permissions on ${LTARGET_DIR}"
 			[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LTARGET_DIR"
 		else
 			error_echo "${FUNCNAME}() error: Cannot find system numpy libs!"
