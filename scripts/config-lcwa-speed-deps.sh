@@ -4,9 +4,9 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 #
-#	Latest mod: Add multitail utility to list of packages to install. 
+#	Latest mod: Kludge fix for unreliable rpi pip3 numpy package
 ######################################################################################################
-SCRIPT_VERSION=20240119.080341
+SCRIPT_VERSION=20240127.180429
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -18,7 +18,7 @@ SCRIPT_DESC="Installs system and python library dependencies for the lcwa-speed 
 # Include the generic service install functions
 ######################################################################################################
 
-REC_INCSCRIPT_VER=20201220
+REC_INCSCRIPT_VER=20240126
 INCLUDE_FILE="$(dirname $(readlink -f $0))/instsrv_functions.sh"
 [ ! -f "$INCLUDE_FILE" ] && INCLUDE_FILE='/usr/local/sbin/instsrv_functions.sh'
 
@@ -571,7 +571,7 @@ pkg_deps_install(){
 				libffi-dev \
 				${LIBFFI} \
 				at-spi2-core"
-				
+
 			LPKG_LIST="$(echo $LPKG_LIST | xargs)"
 			
 			[ $QUIET -gt 0 ] && error_echo "Checking package list.."
@@ -691,8 +691,12 @@ python_libs_install(){
 			libpng-dev \
 			pkg-config"
 			
+				
 		LPKG_LIST="$(echo $LPKG_LIST | xargs)"
 
+		# with Raspbian GNU/Linux 12, the pip3 installed numpy library throws exceptions.
+		# We'll overwrite the pip3 installed version with the system version.
+		[ $IS_RASPBIAN -gt 0 ] && LPKG_LIST="${LPKG_LIST} python3-numpy"
 		[ $QUIET -gt 0 ] && error_echo "Checking package list.."
 
 		LPKG_LIST="$(pkg_check "$LPKG_LIST")"
@@ -786,6 +790,26 @@ python_libs_install(){
 	LPYTHON_LIBS="$(echo "$LPYTHON_LIBS" | xargs)"
 	
 	pip_libs_install "$INST_PIP3" "$INST_USER" "${LLCWA_HOMEDIR}/.cache/pip" "$LPYTHON_LIBS"
+
+	# Fix for broken pip3 installed numpy package on RaspbianOS
+	if [ $IS_RASPBIAN -gt 0 ]; then
+		error_echo "Fixing broken RaspbianOS pip3 installed numpy package.."
+		local LSOURCE_DIR='/usr/lib/python3/dist-packages/numpy'
+		local LPYTHON3_VER="$(basename "$(readlink -f "$(which python3)")")"
+		local LTARGET_DIR="${LCWA_INSTDIR}/${PYTHON3_VER}/site-packages/numpy"
+		
+		if [ -d "$LSOURCE_DIR" ] && [ ! -z "$LPYTHON3_VER" ]; then
+			[ ! -d "$LTARGET_DIR" ] && [ $TEST -lt 1 ] && mkdir -p "$LTARGET_DIR"
+
+			[ $TEST -lt 1 ] && rsync  --links --perms --times --group --owner --devices \
+				   --specials --stats --progress --verbose --info=skip0 \
+				   --recursive --include='*/' --include='*' --exclude='*' \
+				   "$LSOURCE_DIR" "$LTARGET_DIR"
+			[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LTARGET_DIR"
+		else
+			error_echo "${FUNCNAME}() error: Cannot find system numpy libs!"
+		fi
+	fi
 	
 	# 20210505: Make the /var/lib/lcwa-speed/.config/matplotlib/ directory writeable..
 	[ $TEST -lt 1 ] && mkdir -p "${LLCWA_HOMEDIR}/.config/matplotlib"
