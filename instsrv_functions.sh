@@ -8,7 +8,7 @@
 #   dependent services properly wait until network is up before starting.
 #   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
 ######################################################################################################
-INCSCRIPT_VERSION=20240126.110349
+INCSCRIPT_VERSION=20240128.143138
 
 SCRIPT_NAME=$(basename -- "$0")
 
@@ -66,6 +66,7 @@ NEEDSPRIORITY=0
 
 # system architecture
 M_ARCH="$(uname -m)"
+OS_BIT="$(getconf LONG_BIT)"
 
 # Distros
 IS_DEBIAN=0
@@ -6089,7 +6090,11 @@ version_cmp(){
 systype_disp(){
 	[ "$(basename "$0")" = "instsrv_functions.sh" ] && echo "$(basename "$0") version: ${INCSCRIPT_VERSION}"; echo ' '
 
+	echo "HOSTNAME         == $(hostname)"
+	echo ' '
+
 	echo "M_ARCH           == ${M_ARCH}"
+	echo "OS_BIT           == ${OS_BIT}"
 	echo ' '
 
 	echo "IS_DEBIAN        == ${IS_DEBIAN}"

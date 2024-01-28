@@ -5,8 +5,10 @@
 #   LCWA PPPoE Speedtest Logger
 #   By default, repos will be installed to /usr/local/share/lcwa-speed/speedtest &&
 #   									   /usr/local/share/lcwa-speed/speedtest-config
+#
+# Latest mod: added git_repo_make_safe function to allow updating with dubious ownership..
 ######################################################################################################
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240128.145522
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -262,6 +264,12 @@ git_repo_update(){
 	fi
 }
 
+git_repo_make_safe(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LLOCAL_REPO="$3"
+	git config --global --add safe.directory "$LLOCAL_REPO"
+}
+
 #------------------------------------------------------------------------------
 # git_repo_create() -- Check and Update or Clone the repo locally and check out a branch
 #------------------------------------------------------------------------------
@@ -281,6 +289,8 @@ git_repo_create(){
 		# local repo does not exist...create it..
 		git_repo_clone "$LREMOTE_REPO" "$LLOCAL_REPO"
 		git_repo_checkout "$LREMOTE_BRANCH" "$LLOCAL_REPO"
+		git_repo_make_safe "$LLOCAL_REPO"
+		
 	elif [ $LREPOSTAT -eq 5 ]; then
 		# wrong repo!  Exit!
 		git_repo_show "$LREMOTE_REPO" "$LLOCAL_REPO"
