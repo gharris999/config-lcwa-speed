@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240126.223455
+SCRIPT_VERSION=20240127.204656
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -93,6 +93,7 @@ function config_bash_aliases(){
 	local LUSER=
 	local LGROUP=
 	local LALIASES=
+	local LBASHRC=
 	local LFILEHEADER=
 	local LCMD=
 
@@ -110,10 +111,24 @@ function config_bash_aliases(){
 		fi
 		
 		LGROUP="$(id -ng $LUSER)"
+		LBASHRC="/${LUSER}/.bashrc"
 		LALIASES="/${LUSER}/.bash_aliases"
+		
 		if [ "$LUSER" != 'root' ]; then
+			LBASHRC="/home${LBASHRC}"
 			LALIASES="/home${LALIASES}"
 		fi
+
+		# Make sure that .bashrc references the .bash_aliases file..
+		if [ $CLEAN -lt 1 ] && [ $(grep -c '.bash_aliases' "$LBASHRC") -lt 1 ]; then
+			notquiet_error_echo "Adding .bash_aliases to ${LBASHRC}"
+			[ $TEST -lt 1 ] && cat >>"$LBASHRC" <<-BRC3;
+			if [ -f ~/.bash_aliases ]; then
+				. ~/.bash_aliases
+			fi
+			BRC3
+		fi
+		
 
 		LFILEHEADER="#${LALIASES} -- $(date)"
 
@@ -157,6 +172,10 @@ function config_bash_aliases(){
 			$LCMD "$LALIASES" 'env'				"pushd /etc/default"
 			$LCMD "$LALIASES" 'logs'			"pushd ${LCWA_LOGDIR}"
 			$LCMD "$LALIASES" 'utils'			"pushd ${LCWA_SUPREPO_LOCAL}"
+			$LCMD "$LALIASES" 'start'			"systemctl restart ${LCWA_SERVICE}"
+			$LCMD "$LALIASES" 'stop'			"systemctl stop ${LCWA_SERVICE}"
+			$LCMD "$LALIASES" 'status'			"systemctl status ${LCWA_SERVICE}"
+			$LCMD "$LALIASES" 'fetch'			'scp -p daadmin@gharris-mini:/home/daadmin/DevProj/lcwa-speed/src_patches/wgh_mods02/*.py .'
 		fi
 
 		if [ "$LUSER" = 'root' ]; then
