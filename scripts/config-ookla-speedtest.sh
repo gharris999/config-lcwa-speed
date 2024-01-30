@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCRIPT_VERSION=20240129.195235
+SCRIPT_VERSION=20240130.011250
 
 #
 # config-ookla-speedtest.sh  [--help] [-d|--debug] [-t|--test] [-f|--force] [-q|--quiet] [--no-pause] [--update] [--remove] [--install] [--direct] [optional_username]
@@ -82,8 +82,8 @@ INST_DESC='Ookla speedtest install script'
 
 INST_USER=
 INST_LICENSE_FILE=
-INST_VERSION=20240129.195235
-CUR_VERSION=20240129.195235
+INST_VERSION=20240130.011250
+CUR_VERSION=20240130.011250
 LCWA_ENVFILE=
 
 # Distinguish between debian and redhat systems..
@@ -585,7 +585,7 @@ ookla_speedtest_install_direct(){
 			LURL="$(wget --quiet --output-document=- https://www.speedtest.net/apps/cli 2>/dev/null | lynx -stdin -dump -nonumbers | grep -E '^https.*linux-armhf\.tgz')"
 			;;
 		aarch64)
-			LURL="$(wget --quiet --output-document=- https://www.speedtest.net/apps/cli 2>/dev/null | lynx -stdin -dump -nonumbers | grep -E '^https.*linux-x86_64\.tgz')"
+			LURL="$(wget --quiet --output-document=- https://www.speedtest.net/apps/cli 2>/dev/null | lynx -stdin -dump -nonumbers | grep -E '^https.*linux-aarch64\.tgz')"
 			;;
 		*)
 			error_echo "${FUNCNAME}() Error: Machine type $(uname -m) not supported."
@@ -1243,7 +1243,7 @@ fi
 
 # See if we need to update..
 if [ $UPDATE -gt 0 ]; then
-	CUR_VERSION=20240129.195235
+	CUR_VERSION=20240130.011250
 	INSTALL=0
 	REMOVE=0
 	if [ -z "$CUR_VERSION" ]; then
