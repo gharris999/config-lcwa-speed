@@ -6,7 +6,7 @@
 # Latest mod: Add lynx https parser to basic utils to install. Used to get URLs for RPi versions of
 #             the ookla speedtest cli binary package
 ######################################################################################################
-SCRIPT_VERSION=20240128.183235
+SCRIPT_VERSION=20240130.153250
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -866,13 +866,6 @@ systemd_set_tz_to_local
 ####################################################################
 # Check our hostname, change to LC99Speedbox by default
 [ $NO_CHANGE_HOSTNAME -lt 1 ] && hostname_check "$NEW_HOSTNAME"
-
-####################################################################
-# Config sysctl values for automatic reboots on kernel panics
-if [ $NO_CONFIG_KERNELPANIC -lt 1 ]; then
-    sysctl_panic_defaults_write "$SYSCTL_PANIC_CONF"
-    sysctl_panic_enable "$SYSCTL_PANIC_CONF"
-fi
 
 ####################################################################
 # Install missing basic utilities
