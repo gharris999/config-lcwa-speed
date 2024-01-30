@@ -1,9 +1,9 @@
 #!/bin/bash
 
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240129.195235
 
 #
-# ookla-speedtest-update.sh  [--help] [-d|--debug] [-t|--test] [-f|--force] [-q|--quiet] [--no-pause] [--update] [--remove] [--install] [--direct] [optional_username]
+# config-ookla-speedtest.sh  [--help] [-d|--debug] [-t|--test] [-f|--force] [-q|--quiet] [--no-pause] [--update] [--remove] [--install] [--direct] [optional_username]
 #
 # Installs or updates a previous installation of the Ookla speedtest binary.
 #   Can optionall remove or remove and reinstall the same.
@@ -42,6 +42,26 @@ SCRIPT_VERSION=20240118.150037
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DESC="Installs the ookla speedtest cli binary and creates the license file."
+SCRIPT_EXTRA='[optional_license_username or license_file_path]'
+SCRIPT_HELPER='instsrv_functions.sh'
+
+REC_INCSCRIPT_VER=20240128
+INCLUDE_FILE="${SCRIPT_DIR}/instsrv_functions.sh"
+[ ! -f "$INCLUDE_FILE" ] && INCLUDE_FILE='instsrv_functions.sh'
+
+source "$INCLUDE_FILE"
+
+if [ $? -gt 0 ]; then
+	echo echo "Error: ${INCLUDE_FILE} file not found. Exiting."
+	exit 1
+fi
+
+if [[ -z "$INCSCRIPT_VERSION" ]] || [[ "$INCSCRIPT_VERSION" < "$REC_INCSCRIPT_VER" ]]; then
+	echo "Error: ${INCLUDE_FILE} version is ${INCSCRIPT_VERSION}. Version ${REC_INCSCRIPT_VER} or newer is required."
+	exit 1
+fi
+
 
 DEBUG=0			# Set to >1 for action pauses and diagnostic output
 NO_PAUSE=0		# Set to 1 to inhibit debug pausing
@@ -62,8 +82,8 @@ INST_DESC='Ookla speedtest install script'
 
 INST_USER=
 INST_LICENSE_FILE=
-INST_VERSION=20240118.150037
-CUR_VERSION=20240118.150037
+INST_VERSION=20240129.195235
+CUR_VERSION=20240129.195235
 LCWA_ENVFILE=
 
 # Distinguish between debian and redhat systems..
@@ -133,7 +153,7 @@ function is_speedtest(){
 # is_raspberrypi() -- returns 0 if RPi0, 1, 2, 3 or 4 or a close clone
 ######################################################################################################
 function is_raspberrypi(){
-	[ $(grep -c -E "BCM(283(5|6|7)|270(8|9)|2711)" /proc/cpuinfo) -gt 0 ] && return 0 || return 1
+	[ $(grep -c -E "BCM(283(5|6|7)|270(8|9)|2711)|Model.*Raspberry Pi" /proc/cpuinfo) -gt 0 ] && return 0 || return 1
 }
 
 ######################################################################################################
@@ -550,19 +570,22 @@ ookla_speedtest_install_direct(){
 	case "$(uname -m)" in
 		x86_64)
 			if [[ $OSTYPE == 'darwin'* ]]; then
-				LURL="https://install.speedtest.net/app/cli/ookla-speedtest-1.1.1.84-macosx-x86_64.tgz"
+				LURL="$(curl --silent https://www.speedtest.net/apps/cli 2>/dev/null | lynx -stdin -dump -nonumbers | grep -E '^https.*macosx-universal\.tgz')"
 			else
-				LURL="https://install.speedtest.net/app/cli/ookla-speedtest-1.1.1-linux-x86_64.tgz"
+				LURL="$(wget --quiet --output-document=- https://www.speedtest.net/apps/cli 2>/dev/null | lynx -stdin -dump -nonumbers | grep -E '^https.*linux-x86_64\.tgz')"
 			fi
 			;;
 		i686|i386)
-			LURL="https://install.speedtest.net/app/cli/ookla-speedtest-1.1.1-linux-i386.tgz"
+			LURL="$(wget --quiet --output-document=- https://www.speedtest.net/apps/cli 2>/dev/null | lynx -stdin -dump -nonumbers | grep -E '^https.*linux-i386\.tgz')"
 			;;
 		armv6l)	#RPi0, RPi1
-			LURL='https://install.speedtest.net/app/cli/ookla-speedtest-1.1.1-linux-armel.tgz'
+			LURL="$(wget --quiet --output-document=- https://www.speedtest.net/apps/cli 2>/dev/null | lynx -stdin -dump -nonumbers | grep -E '^https.*linux-armel\.tgz')"
 			;;
 		armv7l) #RPi2 | #RPi3b | RPi4b
-			LURL='https://install.speedtest.net/app/cli/ookla-speedtest-1.1.1-linux-armhf.tgz'
+			LURL="$(wget --quiet --output-document=- https://www.speedtest.net/apps/cli 2>/dev/null | lynx -stdin -dump -nonumbers | grep -E '^https.*linux-armhf\.tgz')"
+			;;
+		aarch64)
+			LURL="$(wget --quiet --output-document=- https://www.speedtest.net/apps/cli 2>/dev/null | lynx -stdin -dump -nonumbers | grep -E '^https.*linux-x86_64\.tgz')"
 			;;
 		*)
 			error_echo "${FUNCNAME}() Error: Machine type $(uname -m) not supported."
@@ -909,14 +932,14 @@ ookla_license_install(){
 	# Now run the speedtest under the user account setting the home directory
 	[ $QUIET -lt 1 ] && error_echo "Running ${LOOKLA} to generate a license file at ${LLICENSE_FILE}"
 	
-	[ $DEBUG -gt 0 ] && echo sudo HOME="$LHOME_DIR" -u "$LINST_USER" yes \| "$LOOKLA" --progress=no --format=csv --server-id=18002
+	[ $DEBUG -gt 0 ] && echo sudo HOME="$LHOME_DIR" -u "$LINST_USER" yes \| "$LOOKLA" --progress=no --format=csv
 	debug_pause "${LINENO} -- ${FUNCNAME}()"
 
 	# Make 3 attempts at installing the licence file..
 	for n in 1 2 3
 	do
 		# speedtest doesn't seem to respect the HOME variable..instead 
-		[ $TEST -lt 1 ] && sudo HOME="$LHOME_DIR" -u "$LINST_USER" yes | "$LOOKLA" --progress=no --format=csv --server-id=18002
+		[ $TEST -lt 1 ] && sudo HOME="$LHOME_DIR" -u "$LINST_USER" yes | "$LOOKLA" --progress=no --format=csv
 		
 		# If the license file got installed to root..
 		if [ ! -f "$LLICENSE_FILE" ] && [ -f "$LROOT_LICENSE_FILE" ]; then
@@ -1220,7 +1243,7 @@ fi
 
 # See if we need to update..
 if [ $UPDATE -gt 0 ]; then
-	CUR_VERSION=20240118.150037
+	CUR_VERSION=20240129.195235
 	INSTALL=0
 	REMOVE=0
 	if [ -z "$CUR_VERSION" ]; then

@@ -3,10 +3,10 @@
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
 #
-# Latest mod: Config sysctl for auto reboots on kernel panics, add convenience bash aliases,
-# add sshd.conf settings to permit connections with old cyphers..
+# Latest mod: Add lynx https parser to basic utils to install. Used to get URLs for RPi versions of
+#             the ookla speedtest cli binary package
 ######################################################################################################
-SCRIPT_VERSION=20240126.223628
+SCRIPT_VERSION=20240128.183235
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -169,6 +169,7 @@ basic_utils_install(){
 				dnsutils \
 				iperf3 \
 				wget \
+				lynx \
 				whois \
 				ufw \
 				gzip \
