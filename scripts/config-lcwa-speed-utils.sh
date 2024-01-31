@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240127.204656
+SCRIPT_VERSION=20240130.171253
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -44,6 +44,7 @@ LCWA_ENVFILE=
 ALIAS_INST_ONLY=0
 UNINSTALL=0
 KEEP=0
+CLEAN=0
 
 notquiet_error_echo(){
 	[ $QUIET -lt 1 ] && echo "$@" 1>&2;
@@ -118,6 +119,8 @@ function config_bash_aliases(){
 			LBASHRC="/home${LBASHRC}"
 			LALIASES="/home${LALIASES}"
 		fi
+
+		[ ! -f "$LBASHRC" ] && touch "$LBASHRC"
 
 		# Make sure that .bashrc references the .bash_aliases file..
 		if [ $CLEAN -lt 1 ] && [ $(grep -c '.bash_aliases' "$LBASHRC") -lt 1 ]; then

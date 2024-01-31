@@ -2,7 +2,7 @@
 <extension>
 	<id>f1a4af09-977c-458a-b3f7-f530fb9029c1</id>
 	<name>config-lcwa-speed</name>
-	<version>20240130.153905</version>
+	<version>20240130.173010</version>
 	<description>LCWA Speedtest Logger Install Script</description>
 	<creator>Gordon Harris</creator>
 	<email>wgordonharris@gmail.com</email>

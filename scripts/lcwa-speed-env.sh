@@ -69,7 +69,7 @@ env_file_exists(){
 
 # Remote & local repos
 #~ LCWA_REPO='https://github.com/gharris999/LCWA.git'
-#~ LCWA_REPO_BRANCH='origin/wgh_mods02'
+#~ LCWA_REPO_BRANCH='origin/wgh_mods03'
 #~ LCWA_REPO_LOCAL="${LCWA_INSTDIR}/speedtest"
 #~ LCWA_REPO_LOCAL_CONF="${LCWA_REPO_LOCAL}/config/test_speed_cfg.json"
 #~ LCWA_REPO_LOCAL_PATCHDIR="${LCWA_REPO_LOCAL}_patches/src"
@@ -205,7 +205,7 @@ function env_vars_defaults_get(){
                                                             
 # Remote & local repos                                      
 [ -z "$LCWA_REPO" ] 				&&  LCWA_REPO='https://github.com/gharris999/LCWA.git'
-[ -z "$LCWA_REPO_BRANCH" ] 			&&  LCWA_REPO_BRANCH='origin/wgh_mods02'
+[ -z "$LCWA_REPO_BRANCH" ] 			&&  LCWA_REPO_BRANCH='origin/wgh_mods03'
 [ -z "$LCWA_REPO_LOCAL" ] 			&&  LCWA_REPO_LOCAL="${LCWA_INSTDIR}/speedtest"
 [ -z "$LCWA_REPO_LOCAL_CONF" ] 		&&  LCWA_REPO_LOCAL_CONF="${LCWA_REPO_LOCAL}/config/test_speed_cfg.json"
 [ -z "$LCWA_REPO_LOCAL_PATCHDIR" ] 	&&  LCWA_REPO_LOCAL_PATCHDIR="${LCWA_REPO_LOCAL}_patches/src"

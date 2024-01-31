@@ -4,7 +4,7 @@
 # Bash script for installing Andi Klein's Python LCWA PPPoE Speedtest Logger
 # as a service on systemd systems
 ######################################################################################################
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240130.154212
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPTNAME=$(basename $0)
@@ -251,7 +251,7 @@ script_opts_set_all(){
 PREP_OPTS=
 INST_OPTS=
 DEPS_OPTS=
-OKLA_OPTS=
+OKLA_OPTS="--env-file=/etc/default/lcwa-speed --direct --force"
 REPO_OPTS=
 JSON_OPTS=
 SRVC_OPTS=

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCRIPT_VERSION=20240130.011250
+SCRIPT_VERSION=20240130.172735
 
 #
 # config-ookla-speedtest.sh  [--help] [-d|--debug] [-t|--test] [-f|--force] [-q|--quiet] [--no-pause] [--update] [--remove] [--install] [--direct] [optional_username]
@@ -82,8 +82,8 @@ INST_DESC='Ookla speedtest install script'
 
 INST_USER=
 INST_LICENSE_FILE=
-INST_VERSION=20240130.011250
-CUR_VERSION=20240130.011250
+INST_VERSION=20240130.172735
+CUR_VERSION=20240130.172735
 LCWA_ENVFILE=
 
 # Distinguish between debian and redhat systems..
@@ -615,6 +615,9 @@ ookla_speedtest_install_direct(){
 	if [ -x "$LSOURCE" ]; then
 		[ $QUIET -lt 1 ] && error_echo "Copying ${LSOURCE} to ${LTARGET}.."
 		[ $TEST -lt 1 ] && cp -p "$LSOURCE" "$LTARGET"
+	else
+		error_echo "${FUNCNAME}() error: cannot find ${LSOURCE}."
+		return 1
 	fi
 	
 	if [ $(which speedtest 2>/dev/null | wc -l) -lt 1 ]; then
@@ -1205,7 +1208,7 @@ done
 [ $VERBOSE -gt 0 ] && error_echo "${SCRIPTNAME} ${PRE_ARGS}"
 
 # Force direct (non-package manager) download & install for rpi systems..
-[ $(uname -m | grep -c 'arm') -gt 0 ] && DIRECT=1
+[ $(uname -m | grep -c 'arm\|aarch64') -gt 0 ] && DIRECT=1
 
 
 if [ ! -z "$LCWA_ENVFILE" ] && [ -f "$LCWA_ENVFILE" ]; then
@@ -1243,7 +1246,7 @@ fi
 
 # See if we need to update..
 if [ $UPDATE -gt 0 ]; then
-	CUR_VERSION=20240130.011250
+	CUR_VERSION=20240130.172735
 	INSTALL=0
 	REMOVE=0
 	if [ -z "$CUR_VERSION" ]; then
