@@ -98,6 +98,10 @@ env_file_exists(){
 #~ LCWA_OPTIONS="--conf ${LCWA_CONFFILE}"
 #~ LCWA_DEBUG_OPTIONS="--conf ${LCWA_CONFFILE} --time 1 --nowait --testdb --verbosity 2"
 
+# Command-ine arguments for the update daemon
+#~ LCWA_UPDATE_OPTIONS="--clean"
+#~ LCWA_UPDATE_DEBUG_OPTIONS="--debug --clean"
+
 #~ LCWA_EXEC_ARGS="\$LCWA_OPTIONS"
 #~ LCWA_EXEC_ARGS_DEBUG="--adebug \$LCWA_OPTIONS"
 
@@ -113,7 +117,8 @@ env_file_exists(){
 #~ LCWA_DEBUG_SCRIPT="${LCWA_SUPREPO_LOCAL}/scripts/${INST_NAME}-debug.sh"
 #~ LCWA_UPDATE_SCRIPT="${LCWA_SUPREPO_LOCAL}/scripts/${INST_NAME}-update.sh"
 
-# Other control variables for the update script             
+# Other control variables for the update script
+#~ LCWA_PRESERVE_ENV=													# Prevents the nightly update service from overwriting the env file
 #~ LCWA_CLEARLOG=
 #~ LCWA_NOUPDATES=
 
@@ -156,6 +161,8 @@ function env_vars_name(){
 "LCWA_DAEMON" \
 "LCWA_OPTIONS" \
 "LCWA_DEBUG_OPTIONS" \
+"LCWA_UPDATE_OPTIONS" \
+"LCWA_UPDATE_DEBUG_OPTIONS" \
 "LCWA_EXEC_ARGS" \
 "LCWA_EXEC_ARGS_DEBUG" \
 "LCWA_DEBUG_SCRIPT" \
@@ -166,6 +173,7 @@ function env_vars_name(){
 "LCWA_PPPOE_PROVIDER" \
 "LCWA_PPPOE_PASSWORD" \
 "LCWA_PPPOE_OPTS" \
+"LCWA_PRESERVE_ENV" \
 "LCWA_CLEARLOG" \
 "LCWA_NOUPDATES" \
 "LCWA_UNIT" \
@@ -232,7 +240,12 @@ function env_vars_defaults_get(){
                                                             
 # Command-line arguments for the daemon                     
 [ -z "$LCWA_OPTIONS" ] 				&&  LCWA_OPTIONS="--conf ${LCWA_CONFFILE}"
-[ -z "$LCWA_DEBUG_OPTIONS" ]		&&  LCWA_DEBUG_OPTIONS="--conf ${LCWA_CONFFILE} --time 1 ---nowait --testdb --verbosity 2"
+[ -z "$LCWA_DEBUG_OPTIONS" ]		&&  LCWA_DEBUG_OPTIONS="--conf ${LCWA_CONFFILE} --time 1 --nowait --testdb --verbosity 2"
+
+# Command-line arguments for the update daemon
+[ -z "$LCWA_UPDATE_OPTIONS" ] 		&&  LCWA_UPDATE_OPTIONS="--clean"
+[ -z "$LCWA_UPDATE_DEBUG_OPTIONS" ]	&&  LCWA_UPDATE_DEBUG_OPTIONS="--debug --clean"
+
 [ -z "$LCWA_EXEC_ARGS" ] 			&&  LCWA_EXEC_ARGS="$LCWA_OPTIONS"
 [ -z "$LCWA_EXEC_ARGS_DEBUG" ] 		&&  LCWA_EXEC_ARGS_DEBUG="--adebug \$LCWA_OPTIONS"
                                                             
@@ -246,7 +259,8 @@ function env_vars_defaults_get(){
 [ -z "$LCWA_PPPOE_PASSWORD" ] 		&&  LCWA_PPPOE_PASSWORD="password"
 
                                                             
-# Other control variables for the update script             
+# Other control variables for the update script
+[ -z "$LCWA_PRESERVE_ENV" ]			&&	LCWA_PRESERVE_ENV=0       
 [ -z "$LCWA_CLEARLOG" ] 			&&  LCWA_CLEARLOG=1
 [ -z "$LCWA_NOUPDATES" ] 			&&  LCWA_NOUPDATES=1
                                                             

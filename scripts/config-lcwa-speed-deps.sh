@@ -6,7 +6,7 @@
 #
 #	Latest mod: Kludge fix for unreliable rpi pip3 numpy package
 ######################################################################################################
-SCRIPT_VERSION=20240127.184139
+SCRIPT_VERSION=20240202.171219
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -70,6 +70,7 @@ NEEDSDATA=1
 KEEPCACHE=0
 NO_CLEAN=1
 
+UPDATE=0
 LIST_PIP_LIBS=0
 UPDATE_PIP_LIBS=0
 
@@ -108,7 +109,7 @@ instance_dir_create(){
 		mkdir -p "$LINST_DIR"
 	fi
 
-	error_echo "Fixing permissions for ${INST_USER}:${INST_GROUP} on ${LINST_DIR}.."
+	[ $VERBOSE -gt 0 ] && error_echo "Fixing permissions for ${INST_USER}:${INST_GROUP} on ${LINST_DIR}.."
 	chown --silent -R "${INST_USER}:${INST_GROUP}" "$LINST_DIR"
 
 	debug_echo "${LINENO} -- ${FUNCNAME}() done."
@@ -121,11 +122,11 @@ home_dir_create(){
 	local LLCWA_HOMEDIR="${1:-${LCWA_HOMEDIR}}"
 
 	if [ ! -d "$LLCWA_HOMEDIR" ]; then
-		error_echo "Creating ${LLCWA_HOMEDIR} home dir for ${INST_USER}.."
+		[ $VERBOSE -gt 0 ] && error_echo "Creating ${LLCWA_HOMEDIR} home dir for ${INST_USER}.."
 		mkdir -p "$LLCWA_HOMEDIR"
 	fi
 
-	error_echo "Fixing permissions for ${INST_USER}:${INST_GROUP} on ${LLCWA_HOMEDIR}.."
+	[ $VERBOSE -gt 0 ] && error_echo "Fixing permissions for ${INST_USER}:${INST_GROUP} on ${LLCWA_HOMEDIR}.."
 	chown --silent -R "${INST_USER}:${INST_GROUP}" "$LLCWA_HOMEDIR"
 
 	debug_echo "${LINENO} -- ${FUNCNAME}() done."
@@ -150,15 +151,15 @@ is_raspberry_pi(){
 	LIS_RPI=$(lsb_release -sd | grep -c 'Raspbian')
 
 	if [ $LIS_RPI -lt 1 ]; then
-		error_echo "${SCRIPT_NAME}: lsb_release reports $(lsb_release -sd)."
-		error_echo "This system is probably not a Raspberry Pi."
+		[ $VERBOSE -gt 0 ] && error_echo "${SCRIPT_NAME}: lsb_release reports $(lsb_release -sd)."
+		[ $VERBOSE -gt 0 ] && error_echo "This system is probably not a Raspberry Pi."
 		return 1
 	fi
 	
 	# Can we find the config utility?
 	local LRASPI_CONFIG="$(which raspi-config)"
 	if [ -z "$LRASPI_CONFIG" ]; then
-		error_echo "${SCRIPT_NAME} error: connot fine raspi-config utility."
+		error_echo "${SCRIPT_NAME} error: connot find raspi-config utility."
 		error_echo "This system is probably not a Raspberry Pi."
 		return 1
 	fi
@@ -357,7 +358,7 @@ pip_libs_install(){
 	
 	# Even with venv, pip seems to require a user have a /home/user directory for ..
 	if [ ! -d "$LFAKE_HOME" ]; then
-		error_echo "Creating fake home ${LFAKE_HOME} for pip3 libraries install.."
+		[ $VERBOSE -gt 0 ] && error_echo "Creating fake home ${LFAKE_HOME} for pip3 libraries install.."
 		[ $TEST -lt 1 ] && mkdir -p "$LFAKE_HOME"
 		[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LFAKE_HOME"
 		HOME="$LFAKE_HOME"
@@ -704,6 +705,15 @@ python_libs_install(){
 
 		apt_install "$LPKG_LIST"
 		LRET=$?
+
+		LPKG_LIST=""
+		dpkg -s libfreetype6-dev || LPKG_LIST=libfreetype-dev
+
+		if [ ! -z "$LPKG_LIST" ]; then
+			apt_install "$LPKG_LIST"
+			LRET=$?
+		fi
+		
 		
 	elif [ $USE_YUM -gt 0 ]; then
 
@@ -735,9 +745,9 @@ python_libs_install(){
 	LCUR_HOME="$HOME"
 	HOME="$LLCWA_HOMEDIR"
 
-	error_echo "========================================================================================="
+	[ $VERBOSE -gt 0 ] && error_echo "========================================================================================="
 	error_echo "Installing venv python virtual environment to ${LLCWA_INST_DIR}, caching to ${LLCWA_HOMEDIR}/.cache/pip"
-	error_echo "  HOME is set to ${HOME}"
+	[ $VERBOSE -gt 0 ] && error_echo "  HOME is set to ${HOME}"
 	[ $TEST -lt 1 ] && sudo -H -u "$INST_USER" python3 -m venv "$LLCWA_INST_DIR"
 	
 	INST_PYTHON="${LLCWA_INST_DIR}/bin/python3"
@@ -760,21 +770,21 @@ python_libs_install(){
 	debug_echo "${LINENO} -- ${FUNCNAME}() venv installation done."
 	
 	# Update pip3
-	error_echo "Updating ${INST_PIP3}.."
+	[ $VERBOSE -gt 0 ] && error_echo "Updating ${INST_PIP3}.."
 	[ $TEST -lt 1 ] && sudo -H -u "$INST_USER" "$INST_PIP3" install -qq --default-timeout=1200 --cache-dir "${LLCWA_HOMEDIR}/.cache/pip" --upgrade pip
 
 	debug_echo "${LINENO} -- ${FUNCNAME}() Update pip done."
 	
 	# Even with venv, pip seems to require a user have a /home/user directory for ..
 	LFAKE_HOME="/home/${INST_USER}"
-	error_echo "Creating fake home ${LFAKE_HOME} for python libraries install.."
+	[ $VERBOSE -gt 0 ] && error_echo "Creating fake home ${LFAKE_HOME} for python libraries install.."
 	[ $TEST -lt 1 ] && mkdir -p "$LFAKE_HOME"
 	[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LFAKE_HOME"
 	HOME="$LFAKE_HOME"
 	
-	error_echo "========================================================================================="
+	[ $VERBOSE -gt 0 ] && error_echo "========================================================================================="
 	error_echo "Installing python libraries to virtual environment ${LLCWA_INST_DIR}, caching to ${LLCWA_HOMEDIR}/.cache/pip"
-	error_echo "  HOME is set to ${HOME}"
+	[ $VERBOSE -gt 0 ] && error_echo "  HOME is set to ${HOME}"
 	
 	local LPYTHON_LIBS=" \
 		testresources \
@@ -816,7 +826,7 @@ python_libs_install(){
 	# 20210505: Make the /var/lib/lcwa-speed/.config/matplotlib/ directory writeable..
 	[ $TEST -lt 1 ] && mkdir -p "${LLCWA_HOMEDIR}/.config/matplotlib"
 	[ $TEST -lt 1 ] && chown --silent -R "${INST_USER}:${INST_GROUP}" "$LLCWA_HOMEDIR"
-	error_echo "Setting permissions on ${LLCWA_HOMEDIR}/.config/matplotlib/"
+	[ $VERBOSE -gt 0 ] && error_echo "Setting permissions on ${LLCWA_HOMEDIR}/.config/matplotlib/"
 	[ $TEST -lt 1 ] && chmod 777 "${LLCWA_HOMEDIR}/.config/matplotlib/"
 
 	cd "$CURCD"
@@ -971,7 +981,7 @@ is_root
 env_vars_zero $(env_vars_name)
 
 
-SHORTARGS='hdqvftLUk'
+SHORTARGS='hdqvftuLUk'
 
 LONGARGS="
 help,
@@ -980,6 +990,7 @@ quiet,
 verbose,
 test,
 force,
+update,
 list-pip,
 update-pip,
 keep-cache,

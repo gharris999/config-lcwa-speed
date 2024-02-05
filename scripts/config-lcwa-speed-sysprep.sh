@@ -6,7 +6,7 @@
 # Latest mod: Add lynx https parser to basic utils to install. Used to get URLs for RPi versions of
 #             the ookla speedtest cli binary package
 ######################################################################################################
-SCRIPT_VERSION=20240130.153250
+SCRIPT_VERSION=20240202.184729
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -48,6 +48,8 @@ NO_CONFIG_KERNELPANIC=0
 NEW_HOSTNAME=
 UNINSTALL=0
 USERS=
+
+KPANIC_OPTS=""
 
 INST_NAME='lcwa-speed'
 INST_PROD="LCWA Python3 PPPoE Speedtest Logger"
@@ -277,7 +279,7 @@ hostname_check(){
 	fi
 
 	# Is our hostname OK??
-	[ $QUIET -lt 1 ] && error_echo "Checking ${LOLDNAME} for hostname compatibility.."
+	[ $VERBOSE -gt 0 ] && error_echo "Checking ${LOLDNAME} for hostname compatibility.."
 	
 	if [ "$(hostname | grep -c -E '^LC[0-9]{2}.*$')" -gt 0 ]; then
 		return 0
@@ -323,7 +325,7 @@ systemd_set_tz_to_local(){
 			[ $QUIET -lt 1 ] && error_echo "Resetting local time zone from ${LSYS_TZ} to ${LMY_TZ}.."
 			[ $TEST -lt 1 ] && "$LTIMEDATECTL" set-timezone "$LMY_TZ"
 		else
-			[ $QUIET -lt 1 ] && error_echo "Confirmied local timezone ${LMY_TZ} matches system timezone ${LSYS_TZ}."
+			[ $VERBOSE -gt 0 ] && error_echo "Confirmied local timezone ${LMY_TZ} matches system timezone ${LSYS_TZ}."
 		fi
 
 		# Configure our prefered NTP servers..
@@ -467,36 +469,36 @@ config_sshd_oldhostkeys(){
 	
 	# /etc/ssh/sshd_config
 	if [ $(grep -c -E '^\s*HostKeyAlgorithms' "$SSHD_CONF") -lt 1 ]; then
-		error_echo "Adding 'HostKeyAlgorithms +ssh-rsa' to ${SSHD_CONF}.."
+		[ $QUIET -lt 1 ] && error_echo "Adding 'HostKeyAlgorithms +ssh-rsa' to ${SSHD_CONF}.."
 		[ $TEST -lt 1 ] && echo ' ' >>"$SSHD_CONF"
 		[ $TEST -lt 1 ] && echo 'HostKeyAlgorithms +ssh-rsa' >>"$SSHD_CONF"
 	elif [ $(grep -c -E '^\s*HostKeyAlgorithms \+ssh-rsa' "$SSHD_CONF") -gt 0 ]; then
-		error_echo "${SSHD_CONF} already configured for HostKeyAlgorithms +ssh-rsa"
+		[ $VERBOSE -gt 0 ] && error_echo "${SSHD_CONF} already configured for HostKeyAlgorithms +ssh-rsa"
 	else
-		error_echo "Modifying ${SSHD_CONF} to add ssh-rsa to HostKeyAlgorithms.."
+		[ $QUIET -lt 1 ] && error_echo "Modifying ${SSHD_CONF} to add ssh-rsa to HostKeyAlgorithms.."
 		#~ [ $TEST -lt 1 ] && sed -i -e 's/^\(HostKeyAlgorithms .*\)$/\1,ssh-rsa/' "$SSHD_CONF"
 		[ $TEST -lt 1 ] && sed -i -e 's/^\s*\(HostKeyAlgorithms .*\)$/\1,ssh-rsa/' "$SSHD_CONF"
 	fi
 
 	if [ $(grep -c -E '^PubkeyAcceptedAlgorithms' "$SSHD_CONF") -lt 1 ]; then
-		error_echo "Adding 'PubkeyAcceptedAlgorithms +ssh-rsa' to ${SSHD_CONF}.."
+		[ $QUIET -lt 1 ] && error_echo "Adding 'PubkeyAcceptedAlgorithms +ssh-rsa' to ${SSHD_CONF}.."
 		[ $TEST -lt 1 ] && echo 'PubkeyAcceptedAlgorithms +ssh-rsa' >>"$SSHD_CONF"
 	elif [ $(grep -c -E '^PubkeyAcceptedAlgorithms \+ssh-rsa' "$SSHD_CONF") -gt 0 ]; then
-		error_echo "${SSHD_CONF} already configured for PubkeyAcceptedAlgorithms +ssh-rsa"
+		[ $VERBOSE -gt 0 ] && error_echo "${SSHD_CONF} already configured for PubkeyAcceptedAlgorithms +ssh-rsa"
 	else
-		error_echo "Modifying ${SSHD_CONF} to add ssh-rsa to PubkeyAcceptedAlgorithms.."
+		[ $QUIET -lt 1 ] && error_echo "Modifying ${SSHD_CONF} to add ssh-rsa to PubkeyAcceptedAlgorithms.."
 		[ $TEST -lt 1 ] && sed -i -e 's/^\(PubkeyAcceptedAlgorithms .*\)$/\1,ssh-rsa/' "$SSHD_CONF"
 	fi
 
 	# Modify /etc/ssh/ssh_config so we can ssh into, e.g., ubiquiti airmax & airfiber devices
 	if [ $(grep -c -E '^\s*HostKeyAlgorithms' "$SSH_CONF") -lt 1 ]; then
-		error_echo "Adding 'HostKeyAlgorithms +ssh-rsa,ssh-dss' to ${SSH_CONF}.."
+		[ $QUIET -lt 1 ] && error_echo "Adding 'HostKeyAlgorithms +ssh-rsa,ssh-dss' to ${SSH_CONF}.."
 		[ $TEST -lt 1 ] && echo ' ' >>"$SSH_CONF"
 		[ $TEST -lt 1 ] && echo 'HostKeyAlgorithms +ssh-rsa,ssh-dss' >>"$SSH_CONF"
 	elif [ $(grep -c -E '^\s*HostKeyAlgorithms \+ssh-rsa,ssh-dss' "$SSH_CONF") -gt 0 ]; then
-		error_echo "${SSH_CONF} already configured for HostKeyAlgorithms +ssh-rsa,ssh-dss"
+		[ $VERBOSE -gt 0 ] && error_echo "${SSH_CONF} already configured for HostKeyAlgorithms +ssh-rsa,ssh-dss"
 	else
-		error_echo "Modifying ${SSH_CONF} to add +ssh-rsa,ssh-dss to HostKeyAlgorithms.."
+		[ $QUIET -lt 1 ] && error_echo "Modifying ${SSH_CONF} to add +ssh-rsa,ssh-dss to HostKeyAlgorithms.."
 		#~ [ $TEST -lt 1 ] && sed -i -e 's/^\(HostKeyAlgorithms .*\)$/\1,ssh-rsa/' "$SSH_CONF"
 		[ $TEST -lt 1 ] && sed -i -e 's/^\s*\(HostKeyAlgorithms .*\)$/\1,+ssh-rsa,ssh-dss/' "$SSH_CONF"
 	fi
@@ -528,8 +530,8 @@ is_raspberry_pi(){
 	LIS_RPI=$(lsb_release -sd | grep -c 'Raspbian')
 
 	if [ $LIS_RPI -lt 1 ]; then
-		error_echo "${SCRIPT_NAME}: lsb_release reports $(lsb_release -sd)."
-		error_echo "This system is probably not a Raspberry Pi."
+		[ $VERBOSE -gt 0 ] && error_echo "${SCRIPT_NAME}: lsb_release reports $(lsb_release -sd)."
+		[ $VERBOSE -gt 0 ] && error_echo "This system is probably not a Raspberry Pi."
 		return 1
 	fi
 	
@@ -807,18 +809,23 @@ do
 			;;
 		-d|--debug)		# Shows debugging info.
 			((DEBUG+=1))
+			KPANIC_OPTS="${KPANIC_OPTS} ${1}"
 			;;
 		-q|--quiet)		# Supresses message output.
 			QUIET=1
+			KPANIC_OPTS="${KPANIC_OPTS} ${1}"
 			;;
 		-v|--verbose)		# Increas message output.
 			((VERBOSE+=1))
+			KPANIC_OPTS="${KPANIC_OPTS} ${1}"
 			;;
 		-f|--force)		# Inhibit rpi checks
 			((FORCE+=1))
+			KPANIC_OPTS="${KPANIC_OPTS} ${1}"
 			;;
 		-t|--test)		# Tests script logic without performing actions.
 			((TEST+=1))
+			KPANIC_OPTS="${KPANIC_OPTS} ${1}"
 			;;
 		-a|--alias)		# Install / update / remove (with --remove) bash aliases only.
 			ALIAS_INST_ONLY=1
@@ -882,4 +889,4 @@ config_sshd_oldhostkeys
 
 ####################################################################
 # Configure sysctl values to enable auto reboots after kernel panics
-"${SCRIPT_DIR}/config-lcwa-speed-kpanic.sh" --verbose
+"${SCRIPT_DIR}/config-lcwa-speed-kpanic.sh" $KPANIC_OPTS

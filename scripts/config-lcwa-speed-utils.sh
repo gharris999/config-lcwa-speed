@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240130.171253
+SCRIPT_VERSION=20240204.234931
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -66,7 +66,7 @@ function bash_alias_add(){
 	local LESCAPE="${4:-1}"
 	
 	sed -i "/^alias ${LALIAS}=/d" "$LALIASES"
-	[ $QUIET -lt 1 ] && error_echo "Adding alias ${LALIAS} to ${LALIASES}"
+	[ $VERBOSE -gt 0 ] && error_echo "Adding alias ${LALIAS} to ${LALIASES}"
 	# By default, escape the command string..
 	[ $LESCAPE -gt 0 ] && LCOMMAND="$(escape_var "$LCOMMAND")"
 	[ $TEST -lt 1 ] && echo "alias ${LALIAS}=\"${LCOMMAND}\"" >>"$LALIASES"
@@ -79,7 +79,7 @@ function bash_alias_remove(){
 	local LALIAS="$2"
 	local LCOMMAND="$3"
 	local LESCAPE="${4:-1}"
-	[ $QUIET -lt 1 ] && error_echo "Removing alias ${LALIAS} from ${LALIASES}"
+	[ $VERBOSE -gt 0 ] && error_echo "Removing alias ${LALIAS} from ${LALIASES}"
 	[ $TEST -lt 1 ] && sed -i "/^alias ${LALIAS}=/d" "$LALIASES"
 }
 
@@ -174,9 +174,11 @@ function config_bash_aliases(){
 			$LCMD "$LALIASES" 'data'			"pushd ${LCWA_DATADIR}"
 			$LCMD "$LALIASES" 'env'				"pushd /etc/default"
 			$LCMD "$LALIASES" 'logs'			"pushd ${LCWA_LOGDIR}"
+			$LCMD "$LALIASES" 'view'			"pushd ${LCWA_LOGDIR}; ./view.sh"
+			$LCMD "$LALIASES" 'wipe'			"pushd ${LCWA_LOGDIR}; ./wipe.sh"
 			$LCMD "$LALIASES" 'utils'			"pushd ${LCWA_SUPREPO_LOCAL}"
 			$LCMD "$LALIASES" 'start'			"systemctl restart ${LCWA_SERVICE}"
-			$LCMD "$LALIASES" 'stop'			"systemctl stop ${LCWA_SERVICE}"
+			$LCMD "$LALIASES" 'stop' 			"systemctl stop ${LCWA_SERVICE}; systemctl stop ${LCWA_SERVICE}-debug"
 			$LCMD "$LALIASES" 'status'			"systemctl status ${LCWA_SERVICE}"
 			$LCMD "$LALIASES" 'fetch'			'scp -p daadmin@gharris-mini:/home/daadmin/DevProj/lcwa-speed/src_patches/wgh_mods02/*.py .'
 		fi

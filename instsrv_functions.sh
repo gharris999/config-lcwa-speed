@@ -8,18 +8,21 @@
 #   dependent services properly wait until network is up before starting.
 #   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
 ######################################################################################################
-INCSCRIPT_VERSION=20240128.143138
+INCSCRIPT_VERSION=20240204.234520
 
 SCRIPT_NAME=$(basename -- "$0")
 
 # Get the underlying user...i.e. who called sudo...modified for WSL2
-UUSER="$SUDO_USER"
-[ -z "$UUSER" ] && UUSER="$(logname 2>/dev/null)"
-[ -z "$UUSER" ] && UUSER="$(who am i | awk '{print $1}')"
-[ -z "$UUSER" ] && [ "$(tty)" != 'not a tty' ] && UUSER="$(ls -l $(tty) | awk '{print $3}')"
-[ -z "$UUSER" ] && UUSER="$(awk -F':' '{ if($7 ~ /\/bin\/bash/ && $1 !~ /root/) {print $1; exit} };0' /etc/passwd)"
-[ -z "$UUSER" ] && UUSER="$(grep '/bin/bash' /etc/passwd | grep -m1 -v 'root' | awk -F ':' '{print $1}')"
-
+UUSER="$(whoami 2>/dev/null)"
+if [ "$UUSER" = 'root' ]; then
+	UUSER="$SUDO_USER"
+	[ -z "$UUSER" ] && UUSER="$(logname 2>/dev/null)"
+	[ -z "$UUSER" ] && UUSER="$(who am i | awk '{print $1}')"
+	[ -z "$UUSER" ] && [ "$(tty)" != 'not a tty' ] && UUSER="$(ls -l $(tty) | awk '{print $3}')"
+	[ -z "$UUSER" ] && UUSER="$(awk -F':' '{ if($7 ~ /\/bin\/bash/ && $1 !~ /root/) {print $1; exit} };0' /etc/passwd)"
+	[ -z "$UUSER" ] && UUSER="$(grep '/bin/bash' /etc/passwd | grep -m1 -v 'root' | awk -F ':' '{print $1}')"
+fi
+UGROUP="$(id -g -n "$UUSER")"
 
 : "${DEBUG:=0}"
 : "${QUIET:=0}"
@@ -84,6 +87,9 @@ IS_FEDORA=0
 FEDORA_VER=0
 FEDORA_NAME=
 IS_WSL=0
+IS_AWS=0
+IS_GCE=0
+IS_MAC=0
 
 # Init system
 IS_SYSV=0
@@ -114,6 +120,7 @@ USE_FIREWALLD=0
 HAS_GUI=0
 IS_GUI=0
 IS_TEXT=0
+test -t 0 && IS_TTY=1 || IS_TYY=0
 
 
 ######################################################################################################
@@ -130,12 +137,18 @@ grep -c -e '^ID.*=.*debian' /etc/os-release >/dev/null 2>&1 && IS_DEBIAN=1 || IS
 #~ IS_FEDORA="$(grep -c -e '^ID.*=.*fedora' /etc/os-release 2>/dev/null)"
 grep -c -e '^ID.*=.*fedora' /etc/os-release >/dev/null 2>&1 && IS_FEDORA=1 || IS_FEDORA=0
 
-
 # The follwing works with MacOS Catalina & zsh..
 IS_MAC=$( [[ $OSTYPE == 'darwin'* ]] && echo 1 || echo 0)
 
 # The following works with WSL & WSL2
 IS_WSL=$(uname -a | grep -ci 'microsoft')
+
+# Are we running on a Google Compute Engine?
+curl --silent metadata.google.internal -i >/dev/null 2>&1 && IS_GCE=1 || IS_GCE=0
+
+# Are we running on an Amazon Elastic Compute Cloud Instance?
+# See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/identify_ec2_instances.html
+IS_AWS="$(cat /sys/hypervisor/uuid 2>/dev/null | grep -ci -E '^EC2')"
 
 # Is systemd our init system?  
 #  (default for ubuntu from 15.04 - i.e. 14.10 is the last version to use upstart)
@@ -227,6 +240,12 @@ if [[ $IS_DEBIAN -gt 0 ]]; then
 		bookworm)
 			DEBIAN_VER='12'
 			;;
+		trixie)
+			DEBIAN_VER='13'
+			;;
+		forky)
+			DEBIAN_VER='14'
+			;;
 		*)
 			DEBIAN_VER='0'
 			;;
@@ -298,8 +317,8 @@ fi
 ######################################################################################################
 # Variables for fetching scripts to fetch/install from a mothership server to this machine.
 ######################################################################################################
-MOTHERSHIP='scserver'
-MOTHERSHIP_IP='192.168.0.198'
+MOTHERSHIP='gharris-mini'
+MOTHERSHIP_IP='192.168.0.110'
 PING_BIN="$(which ping)"
 PING_OPTS='-c 1 -w 5'
 
@@ -717,15 +736,69 @@ service_inst_prep(){
 
 ############################################################################
 # sudo_user_get() -- Returns the name of the user calling sudo or sudo su
+# Modified for WSL2..
 ############################################################################
 sudo_user_get(){
-	who am i | sed -n -e 's/^\([[:alnum:]]*\)\s*.*$/\1/p'
+	local LUUSER="$(whoami 2>/dev/null)"
+	if [ "$LUUSER" = 'root' ]; then
+		LUUSER="$SUDO_USER"
+		[ -z "$LUUSER" ] && LUUSER="$(logname 2>/dev/null)"
+		[ -z "$LUUSER" ] && LUUSER="$(who am i | awk '{print $1}')"
+		[ -z "$LUUSER" ] && [ "$(tty)" != 'not a tty' ] && LUUSER="$(ls -l $(tty) | awk '{print $3}')"
+		[ -z "$LUUSER" ] && LUUSER="$(awk -F':' '{ if($7 ~ /\/bin\/bash/ && $1 !~ /root/) {print $1; exit} };0' /etc/passwd)"
+		[ -z "$LUUSER" ] && LUUSER="$(grep '/bin/bash' /etc/passwd | grep -m1 -v 'root' | awk -F ':' '{print $1}')"
+	fi
+	echo "$LUUSER"
+	[ -z "$LUUSER" ] && return 1
+	return 0
 }
+
+user_get(){
+	echo "$UUSER"
+	[ -z "$UUSER" ] && return 1
+	return 0
+}
+
+user_group_get(){
+	local LUSER="$1"
+	local LGROUP=
+	if ( is_user "$LUSER" ); then
+		LGROUP="$(id -g -n "$LUSER")"
+	else
+		return 1
+	fi
+	echo "$LGROUP"
+}
+
+user_homedir_get(){
+	debug_echo "${FUNCNAME}( $@ )"
+	#~ local LINST_USER="${1:-$(who am i | sed -n -e 's/^\([[:alnum:]]*\)\s*.*$/\1/p')}"
+	local LINST_USER="${1:-$(sudo_user_get)}"
+	local LHOME_DIR=
+	
+	# 1st try
+	LHOME_DIR="$( eval echo "~${LINST_USER}")"
+	
+	# 2nd try
+	if [ -z "$LHOME_DIR" ] || [ ! -d "$LHOME_DIR" ]; then
+		LHOME_DIR="$(cat /etc/passwd | grep "$LINST_USER" | awk -F':' '{ print $6 }')"
+	fi
+	
+	# 3rd try
+	if [ -z "$LHOME_DIR" ] || [ ! -d "$LHOME_DIR" ]; then
+		LHOME_DIR="/var/lib/${LINST_USER}"
+	fi
+
+	
+	[ -d "$LHOME_DIR" ] && echo "$LHOME_DIR" || echo ""
+}
+
 
 ######################################################################################################
 # is_user() -- Check to see if a username exists..
 ######################################################################################################
 is_user(){
+	[ -z "$1" ] && return 1
 	id -u "$1" >/dev/null 2>&1
 	return $?
 }
@@ -736,7 +809,9 @@ is_user(){
 inst_user_create(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_USER="${1:-${INST_USER}}"
+	local LNEEDS_HOME="${1:-0}"
 	local LINST_GROUP="$INST_GROUP"
+	local LINST_HOME=
 
 
 	# If we don't need a user, our user will be root..
@@ -772,6 +847,8 @@ inst_user_create(){
 	# If no such user, create the user as a system user..
 	
 	id -u "$LINST_USER" >/dev/null 2>&1
+
+	#~ adduser --system --home /var/lib/serviceuser serviceuser
 	
 	if [[ ! $? -eq 0 ]]; then
 	
@@ -6113,6 +6190,8 @@ systype_disp(){
 	echo "FEDORA_NAME      == ${FEDORA_NAME}"
 	echo "IS_MAC           == ${IS_MAC}"
 	echo "IS_WSL           == ${IS_WSL}"
+	echo "IS_GCE           == ${IS_GCE}"
+	echo "IS_AWS           == ${IS_AWS}"
 	echo ' '
 
 	echo "IS_SYSTEMD       == ${IS_SYSTEMD}"
@@ -6147,9 +6226,11 @@ systype_disp(){
 	echo "HAS_GUI          == ${HAS_GUI}"
 	echo "IS_GUI           == ${IS_GUI}"
 	echo "IS_TEXT          == ${IS_TEXT}"
+	echo "IS_TTY           == ${IS_TTY}"
 	echo ' '
 	echo ' '
 	echo "UUSER            == ${UUSER}"
+	echo "UGROUP           == ${UGROUP}"
 	echo ' '
 	echo ' '
 }

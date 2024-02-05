@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script creating the config.json file required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 ######################################################################################################
-SCRIPT_VERSION=20240127.164237
+SCRIPT_VERSION=20240202.171652
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -549,9 +549,16 @@ config_json_create(){
 		return 1
 	fi
 
-	if [ -z "$LTIMEOUT_BIN" ] || [ -z "$LOOKLA_BIN" ]; then
-		error_echo "${FUNCNAME}() Error: Could not find timeout binary and/or ookla speedtest binary."
-		return 1
+	if [ -z "$LTIMEOUT_BIN" ]; then
+		error_echo "${FUNCNAME}() Warning: Could not find timeout binary."
+		LTIMEOUT_BIN='/usr/bin/timeout'
+	fi
+	
+	if [ -z "$LOOKLA_BIN" ]; then
+		# Since this script runs before the ookla install script, 
+		#   don't error here, otherwise the config json file won't be created.
+		[ $VERBOSE -gt 0 ] && error_echo "${FUNCNAME}() Warning: Could not find ookla speedtest binary."
+		LOOKLA_BIN='/usr/bin/speedtest'
 	fi
 	
 	if [ -z "$LJQ" ]; then
@@ -633,7 +640,7 @@ config_json_create(){
 	if [ $LRET -gt 0 ]; then
 		error_echo "${FUNCNAME}() Error: Invalid JSON block(s) in ${LCONF_JSON_FILE}."
 	else
-		[ $QUIET -lt 1 ] && error_echo "${LCONF_JSON_FILE} created."
+		[ $VERBOSE -gt 0 ] && error_echo "${LCONF_JSON_FILE} created."
 	fi
 	
 	[ $DEBUG -gt 0 ] && debug_cat "$LCONF_JSON_FILE"
@@ -657,7 +664,7 @@ db_tokenfile_install(){
 	[ -z "$LTOKEN_FILE" ] && LTOKEN_FILE="${LCWA_CONFDIR}/LCWA_a.txt"
 
 	if [[ -f "$LTOKEN_FILE" ]] && [[ $FORCE -lt 1 ]]; then
-		error_echo "Dropbox persistent token file already installed.  Use --force to reinstall."
+		[ $QUIET -lt 1 ] && error_echo "Dropbox persistent token file already installed.  Use --force to reinstall."
 		return 0
 	fi
 

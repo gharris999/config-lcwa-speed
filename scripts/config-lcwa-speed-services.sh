@@ -7,7 +7,7 @@
 #   dependent services properly wait until network is up before starting.
 #   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
 ######################################################################################################
-SCRIPT_VERSION=20240120.092757
+SCRIPT_VERSION=20240202.100758
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -294,8 +294,42 @@ lcwa_speed_update_timer_create(){
 
 	[Service]
 	Type=oneshot
-	ExecStart=${LUPDATE_CMD}
+	ExecStart=${LUPDATE_CMD} \$LCWA_UPDATE_OPTIONS
 	StandardError=append:${LCWA_LOGDIR}/${LCWA_SERVICE}-update.log
+
+	[Install]
+	WantedBy=multi-user.target	
+	EOF_TMRDEF1
+	
+	if [ ! -f "$LUPDATE_SERVICE_FILE" ] && [ $TEST -lt 1 ]; then
+		error_echo "${FUNCNAME}( $@ ): Error -- could not create ${LUPDATE_SERVICE_FILE} file."
+		return 1
+	else
+		[ $TEST -lt 1 ] && chown root:root "$LUPDATE_SERVICE_FILE"
+		[ $TEST -lt 1 ] && chmod 0644 "$LUPDATE_SERVICE_FILE"
+	fi
+	
+	[ $DEBUG -gt 2 ] && debug_cat "$LUPDATE_SERVICE_FILE"	
+
+	# Create the service file
+	LUPDATE_SERVICE_NAME="${LCWA_SERVICE}-update-debug.service"
+	LUPDATE_SERVICE_FILE="/lib/systemd/system/${LUPDATE_SERVICE_NAME}"
+	[ ! -f "$LUPDATE_SERVICE_FILE" ] && LACTION='Creating' || LACTION='Overwriting'
+	
+	[ $QUIET -lt 1 ] && error_echo "${LACTION} ${LUPDATE_SERVICE_FILE} service file.."
+	
+	[ $TEST -lt 1 ] && cat >"$LUPDATE_SERVICE_FILE" <<-EOF_TMRDEF1;
+	## ${LUPDATE_SERVICE_FILE} -- $(date)
+	## systemd service unit file
+
+	[Unit]
+	Description=${LCWA_SERVICE} service nightly update.
+	Wants=${LUPDATE_TIMER_NAME}
+
+	[Service]
+	Type=oneshot
+	ExecStart=${LUPDATE_CMD} \$LCWA_UPDATE_DEBUG_OPTIONS
+	StandardError=append:${LCWA_LOGDIR}/${LCWA_SERVICE}-update-debug.log
 
 	[Install]
 	WantedBy=multi-user.target	

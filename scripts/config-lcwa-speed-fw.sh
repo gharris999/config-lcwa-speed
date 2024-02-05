@@ -4,7 +4,7 @@
 # Bash script for setting basic firewall rules
 #   Defaults to openening bootpc, ssh & iperf3 to all subnnets.
 ######################################################################################################
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240202.155014
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -39,7 +39,7 @@ DEBUG=0
 QUIET=0
 VERBOSE=0
 FORCE=0
-PRIVATE=0
+PRIVATE=0	# Default is public
 TEST=0
 #~ KEEP_PREVIOUS=1
 

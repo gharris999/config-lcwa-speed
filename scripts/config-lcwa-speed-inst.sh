@@ -3,7 +3,7 @@
 # Bash script for installing dependencies required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 #   A python3 venv will be installed to /usr/local/share/lcwa-speed
 ######################################################################################################
-SCRIPT_VERSION=20240121.112848
+SCRIPT_VERSION=20240204.222312
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -103,13 +103,16 @@ lcwa_conf_dir_create(){
 lcwa_instance_dir_create(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local LINST_DIR="${1:-${LCWA_INSTDIR}}"
+
+	[ $VERBOSE -gt 0 ] && error_echo "Making ${LINST_DIR} the home dir for ${INST_USER}.."
+	usermod "--home=${LINST_DIR}" "$LCWA_USER"
 	
 	if [ ! -d "$LINST_DIR" ]; then
-		error_echo "Creating ${LINST_DIR} home dir for ${INST_USER}.."
+		[ $VERBOSE -gt 0 ] && error_echo "Creating ${LINST_DIR} home dir for ${INST_USER}.."
 		mkdir -p "$LINST_DIR"
 	fi
 
-	error_echo "Fixing permissions for ${LCWA_USER}:${LCWA_GROUP} on ${LINST_DIR}.."
+	[ $VERBOSE -gt 0 ] && error_echo "Fixing permissions for ${LCWA_USER}:${LCWA_GROUP} on ${LINST_DIR}.."
 	chown --silent -R "${LCWA_USER}:${LCWA_GROUP}" "$LINST_DIR"
 
 	debug_echo "${LINENO} -- ${FUNCNAME}() done."
@@ -122,11 +125,11 @@ lcwa_home_dir_create(){
 	local LLCWA_HOMEDIR="${1:-${LCWA_HOMEDIR}}"
 
 	if [ ! -d "$LLCWA_HOMEDIR" ]; then
-		error_echo "Creating ${LLCWA_HOMEDIR} home dir for ${LCWA_USER}.."
+		[ $VERBOSE -gt 0 ] && error_echo "Creating ${LLCWA_HOMEDIR} home dir for ${LCWA_USER}.."
 		mkdir -p "$LLCWA_HOMEDIR"
 	fi
 
-	error_echo "Fixing permissions for ${LCWA_USER}:${LCWA_GROUP} on ${LLCWA_HOMEDIR}.."
+	[ $VERBOSE -gt 0 ] && error_echo "Fixing permissions for ${LCWA_USER}:${LCWA_GROUP} on ${LLCWA_HOMEDIR}.."
 	chown --silent -R "${LCWA_USER}:${LCWA_GROUP}" "$LLCWA_HOMEDIR"
 
 	debug_echo "${LINENO} -- ${FUNCNAME}() done."
@@ -150,7 +153,7 @@ lcwa_log_dir_create(){
 		touch "$LLOG"
 	done
 
-	error_echo "Fixing permissions for ${LCWA_USER}:${LCWA_GROUP} on ${LLCWA_LOGDIR}.."
+	[ $VERBOSE -gt 0 ] && error_echo "Fixing permissions for ${LCWA_USER}:${LCWA_GROUP} on ${LLCWA_LOGDIR}.."
 	chown --silent -R "${LCWA_USER}:${LCWA_GROUP}" "$LLCWA_LOGDIR"
 
 	# Create the log rotate scripts using wildcards..

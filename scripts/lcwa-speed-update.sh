@@ -4,12 +4,12 @@
 #
 # Latest mod: Improvements to service name identification, git update checking, etc.
 ######################################################################################################
-SCRIPT_VERSION=20240121.084901
+SCRIPT_VERSION=20240202.112632
 
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240121.084901
+SCRIPT_VERSION=20240202.112632
 
 INST_NAME='lcwa-speed'
 LCWA_ENVFILE="$INST_NAME"
@@ -35,7 +35,7 @@ NO_UPDATES=0
 #~ LCWA_SUPREPO_UPDATE
 
 FORCE_UPDATES=0
-
+CLEAN_UNCOMMITTED=0
 
 
 NO_PATCH=1
@@ -462,11 +462,9 @@ git_clean(){
 	pushd "$LLOCAL_REPO" >/dev/null && git_in_repo "$LLOCAL_REPO"
 	if [ $TEST -lt 1 ]; then
 		log_msg "Cleaning ${LLOCAL_REPO}"
-		#~ git reset --hard | tee >(cat 1>&2)
 		git reset --hard 1>&2
 		LRET=${PIPESTATUS[0]}
 		if [ $LRET -lt 1 ]; then
-			#~ git clean -fd | tee >(cat 1>&2)
 			git clean -fd 1>&2
 			LRET=${PIPESTATUS[0]}
 		fi
@@ -492,12 +490,10 @@ git_update(){
 	pushd "$LLOCAL_REPO" >/dev/null && git_in_repo "$LLOCAL_REPO" 
 	if [ $TEST -lt 1 ]; then
 		log_msg "Updating ${LLOCAL_REPO}"
-		#~ git pull | tee -a "$LCWA_VCLOG" | tee >(cat 1>&2)
 		git pull 1>&2
 		LRET=${PIPESTATUS[0]}
 	else
 		log_msg "Test Updating ${LLOCAL_REPO}"
-		#~ git pull --dry-run | tee -a "$LCWA_VCLOG" | tee >(cat 1>&2)
 		git pull --dry-run 1>&2
 		LRET=0
 	fi
@@ -699,7 +695,7 @@ service_update_check(){
 	if [[ "$LAFTER_VER" > "$LBEFORE_VER" ]]; then
 		# Update the service
 		log_msg "Updating installed ${INST_NAME} service version ${LCWA_VERSION} to new version ${LREPO_VER} from ${LLOCAL_REPO}/config-${INST_NAME}.sh"
-		[ $TEST -lt 1 ] && "$LCONFIG_SCRIPT" --update
+		[ $TEST -lt 1 ] && "$LCONFIG_SCRIPT" --env-file=${LCWA_ENVFILE}  --update
 	else
 		log_msg "Service ${INST_NAME}, version ${LCWA_VERSION} is up to date.  ${LAFTER_VER} is not > ${LBEFORE_VER}."
 	fi
@@ -850,7 +846,7 @@ clustercontrol_update(){
 ################################################################################
 
 # Process cmd line args..
-SHORTARGS='hdvftlcw'
+SHORTARGS='hdvftlCcw'
 LONGARGS="help,
 debug,
 verbose,
@@ -859,6 +855,7 @@ test,
 log,
 log-clear,
 clear-log,
+clean,
 env-file:,
 no-update,
 no-patch,
@@ -910,6 +907,9 @@ while [ $# -gt 0 ]; do
 		-c|--log-clear|--clear-log)	#Clears the output log
 			LOG_CLEAR=1
 			LOG=1
+			;;
+		-C|--clean)		# Cleans uncommitted files from the repo before attempting a pull
+			CLEAN_UNCOMMITTED=1
 			;;
 		--cluster)	# Updates the config.json ClusterControl block from the repo config.
 			CLUSTER_UPDATE=1
@@ -993,6 +993,11 @@ if [ $FORCE -lt 1 ] && [ $LCWA_NOUPDATES -gt 0 ]; then
 	log_msg "All repo updates for ${SERVICE_NAME} disabled in ${LCWA_ENVFILE}."
 else
 	# Selectivly perform updates..
+
+	# Clean the repo of uncommited files before checking to see if we're up-to-date..
+	if [ $CLEAN_UNCOMMITTED -gt 0 ]; then
+		git_clean  "$LCWA_REPO_LOCAL"
+	fi
 
 	# Check and update the speedtest python code repo..
 	if [ $LCWA_REPO_UPDATE -gt 0 ]; then

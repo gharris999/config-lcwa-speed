@@ -6,7 +6,7 @@
 #
 # Latest mod: code cleanup.
 ######################################################################################################
-SCRIPT_VERSION=20240120.101745
+SCRIPT_VERSION=20240202.164844
 
 
 SCRIPT="$(realpath -s "$0")"
@@ -195,8 +195,7 @@ sysctl_panic_defaults_write(){
 	sysctl_panic_setting_write "$LCONF_FILE" "kernel.panic_print = 0"
 	sysctl_panic_setting_write "$LCONF_FILE" "kernel.softlockup_panic = 0"
 	sysctl_panic_setting_write "$LCONF_FILE" "kernel.unknown_nmi_panic = 0"
-
-kernel.panic_on_unrecovered_nmi=1
+	sysctl_panic_setting_write "$LCONF_FILE" "kernel.panic_on_unrecovered_nmi = 0"
 
 	
     fi
@@ -390,7 +389,7 @@ if [ $TEST -lt 1 ]; then
 
 fi
 
-if [ $VERBOSE -gt 0 ] || [ $DEBUG -gt 0 ]; then
+if [ $DEBUG -gt 0 ]; then
     error_echo ' '
     error_echo "Sysctl panic values BEFORE:"
     error_echo ' '
@@ -418,7 +417,7 @@ else
     fi
 fi
 
-if [ $VERBOSE -gt 0 ] || [ $DEBUG -gt 0 ]; then
+if [ $DEBUG -gt 0 ]; then
     error_echo ' '
     error_echo "Sysctl panic values AFTER:"
     error_echo ' '
