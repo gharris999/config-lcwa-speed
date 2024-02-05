@@ -6,7 +6,7 @@
 #
 #	Latest mod: Kludge fix for unreliable rpi pip3 numpy package
 ######################################################################################################
-SCRIPT_VERSION=20240202.171219
+SCRIPT_VERSION=20240205.064301
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -693,23 +693,22 @@ python_libs_install(){
 			pkg-config"
 			
 				
-		LPKG_LIST="$(echo $LPKG_LIST | xargs)"
-
 		# with Raspbian GNU/Linux 12, the pip3 installed pandas library throws the exception:
 		# libopenblas.so.0: cannot open shared object file: No such file or directory
 		#  --libopenblas.so.0 is required by the pandas dependency numpy
 		[ $IS_RASPBIAN -gt 0 ] && LPKG_LIST="${LPKG_LIST} libopenblas0"
 		[ $QUIET -gt 0 ] && error_echo "Checking package list.."
 
+		LPKG_LIST="$(echo $LPKG_LIST | xargs)"
+
 		LPKG_LIST="$(pkg_check "$LPKG_LIST")"
 
 		apt_install "$LPKG_LIST"
 		LRET=$?
 
-		LPKG_LIST=""
-		dpkg -s libfreetype6-dev || LPKG_LIST=libfreetype-dev
-
-		if [ ! -z "$LPKG_LIST" ]; then
+		dpkg -s libfreetype6-dev >/dev/null 2>&1
+		if [ $? -gt 0 ]; then
+			LPKG_LIST=libfreetype-dev
 			apt_install "$LPKG_LIST"
 			LRET=$?
 		fi
