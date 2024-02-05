@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCRIPT_VERSION=20240204.235239
+SCRIPT_VERSION=20240205.063206
 
 #
 # config-ookla-speedtest.sh  [--help] [-d|--debug] [-t|--test] [-f|--force] [-q|--quiet] [--no-pause] [--update] [--remove] [--install] [--direct] [optional_username]
@@ -84,8 +84,8 @@ INST_DESC='Ookla speedtest install script'
 INST_USER=
 INST_HOMEDIR=
 INST_LICENSE_FILE=
-INST_VERSION=20240204.235239
-CUR_VERSION=20240204.235239
+INST_VERSION=20240205.063206
+CUR_VERSION=20240205.063206
 LCWA_ENVFILE=
 
 # If we're not running in a tty..
@@ -472,7 +472,7 @@ ookla_speedtest_install_direct(){
 		#   ver1 == ver2: 0
 		#   ver1  > ver2: 1
 		#   ver1  < ver2: 2
-		vercomp "$LCUR_VER" "$LINST_VER" 
+		vercmp "$LCUR_VER" "$LINST_VER" 
 
 		case $? in
 			0)	# Current version == install candidate. Update not needed unless forced.
