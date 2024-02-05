@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240204.234931
+SCRIPT_VERSION=20240205.064409
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -37,7 +37,7 @@ fi
 DEBUG=0
 QUIET=0
 VERBOSE=0
-FORCE=0
+FORCE=1
 TEST=0
 
 LCWA_ENVFILE=
