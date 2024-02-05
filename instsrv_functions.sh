@@ -8,7 +8,7 @@
 #   dependent services properly wait until network is up before starting.
 #   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
 ######################################################################################################
-INCSCRIPT_VERSION=20240204.234520
+INCSCRIPT_VERSION=20240205.001316
 
 SCRIPT_NAME=$(basename -- "$0")
 
@@ -608,7 +608,7 @@ error_exit(){
 # pause() -- echo a prompt and then wait for keypress
 ######################################################################################################
 pause(){
-	read -p "$*"
+	[ $IS_TTY -gt 0 ] && read -p "$*"
 }
 
 ######################################################################################################
@@ -631,7 +631,7 @@ pause_yn(){
 ######################################################################################################
 debug_pause(){
 	[ $DEBUG -gt 0 ] && echo "Debug check at line ${1}:  " 1>&2;
-	[ $DEBUG -gt 1 ] && [ $NO_PAUSE -lt 1 ] && pause 'Press Enter to continue, or ctrl-c to abort..'
+	[ $DEBUG -gt 1 ] && [ $NO_PAUSE -lt 1 ] && [ $IS_TTY -gt 0 ] && pause 'Press Enter to continue, or ctrl-c to abort..'
 }
 
 ######################################################################################################
