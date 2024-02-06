@@ -4,7 +4,7 @@
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
 ######################################################################################################
-SCRIPT_VERSION=20240118.150037
+SCRIPT_VERSION=20240206.133204
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -452,8 +452,9 @@ pppoe_connect_service_create(){
 	[ $QUIET -lt 1 ] && error_echo "Creating ${LPPPOE_SERVICE_NAME} for provider ${LPPPOE_PROVIDER}.."
 
 	[ $TEST -lt 1 ] && cat >"$LPPPOE_SERVICE_FILE" <<-EOF_PPPOESRVC0;
-	# $(date) -- ${LPPPOE_SERVICE_FILE}
-	# Adapted from https://www.sherbers.de/diy-linux-router-part-3-pppoe-and-routing/
+	## $(date) -- ${LPPPOE_SERVICE_FILE}
+	## Adapted from https://www.sherbers.de/diy-linux-router-part-3-pppoe-and-routing/
+	## UNITVERSION=20240206.133204
 
 	[Unit]
 	Description=PPPoE Connection Service
