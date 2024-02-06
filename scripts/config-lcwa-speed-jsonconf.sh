@@ -3,7 +3,7 @@
 ######################################################################################################
 # Bash script creating the config.json file required for Andi Klein's Python LCWA PPPoE Speedtest Logger
 ######################################################################################################
-SCRIPT_VERSION=20240202.171652
+SCRIPT_VERSION=20240206.131105
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -596,6 +596,9 @@ config_json_create(){
 	# Write our initial conf.json using our corrected paths..
 	cat <<- EOF_JSON1 | "$LJQ" '.' >"$LCONF_JSON_FILE"
 	{
+	  "Version": {
+		"config_version": "${SCRIPT_VERSION}"
+      },
 	  "Darwin": {
 		"timeout": "${LTIMEOUT_BIN}",
 		"speedtest": "${LOOKLA_BIN}",

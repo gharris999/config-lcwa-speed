@@ -8,7 +8,7 @@
 #   ntp time-syncs.  This is necessary as RPIs have no hardware clock.  Practical results is to
 #   delay the start of the speedtest service by > 30 seconds from system boot.
 ######################################################################################################
-SCRIPT_VERSION=20240206.101852
+SCRIPT_VERSION=20240206.130621
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -191,6 +191,7 @@ lcwa_speed_unit_file_create(){
 	[ $TEST -lt 1 ] && cat >"$LUNIT_FILE" <<-SYSTEMD_SCR1;
 	## ${LUNIT_FILE} -- $(date)
 	## systemd service unit file
+	## UNITVERSION=20240206.130621
 
 	[Unit]
 	Description=$LCWA_DESC
@@ -232,6 +233,7 @@ lcwa_speed_unit_file_create(){
 	[ $TEST -lt 1 ] && cat >"$LUNIT_FILE" <<-SYSTEMD_SCR2;
 	## ${LUNIT_FILE} -- $(date)
 	## systemd service unit file
+	## UNITVERSION=20240206.130621
 
 	[Unit]
 	Description=$LCWA_DESC debug mode.
@@ -292,6 +294,7 @@ lcwa_speed_update_timer_create(){
 	[ $TEST -lt 1 ] && cat >"$LUPDATE_SERVICE_FILE" <<-EOF_TMRDEF1;
 	## ${LUPDATE_SERVICE_FILE} -- $(date)
 	## systemd service unit file
+	## UNITVERSION=20240206.130621
 
 	[Unit]
 	Description=${LCWA_SERVICE} service nightly update.
@@ -326,6 +329,7 @@ lcwa_speed_update_timer_create(){
 	[ $TEST -lt 1 ] && cat >"$LUPDATE_SERVICE_FILE" <<-EOF_TMRDEF1;
 	## ${LUPDATE_SERVICE_FILE} -- $(date)
 	## systemd service unit file
+	## UNITVERSION=20240206.130621
 
 	[Unit]
 	Description=${LCWA_SERVICE} service nightly update.
@@ -360,6 +364,7 @@ lcwa_speed_update_timer_create(){
 	[ $TEST -lt 1 ] && cat >"$LUPDATE_TIMER_FILE" <<-EOF_TMRDEF2;
 	## ${LUPDATE_TIMER_FILE} -- $(date)
 	## systemd timer unit file
+	## UNITVERSION=20240206.130621
 
 	[Unit]
 	Description=Triggers the ${LUPDATE_SERVICE_NAME} at 00:05 daily, which runs the $(basename ${LCWA_UPDATE_SCRIPT}) script.

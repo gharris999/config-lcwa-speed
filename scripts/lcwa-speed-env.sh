@@ -1,5 +1,8 @@
 #!/bin/bash
 
+SCRIPT_VERSION=20240206.131624
+
+
 env_vars_zero(){
 	local LARG
 	for LARG in $@
@@ -51,12 +54,13 @@ env_file_exists(){
 ######################################################################################################
 
 # Identifiers
+#~ LCWA_ENV_VERSION=20240206.131624
 #~ LCWA_INSTANCE="$INST_NAME"												# Top-level identifier, defaults to lcwa-speed
 #~ LCWA_SERVICE="$INST_NAME"											# Potentially a sub-identifier of LCWA_INSTANCE, e.g. lcwa-speed-beta or lcwa-speed-test
 #~ LCWA_PRODUCT="$INST_PROD"
 #~ LCWA_DESC="$INST_DESC"
 #~ LCWA_PRODUCTID="f1a4af09-977c-458a-b3f7-f530fb9029c1"				# Random GUID..
-#~ LCWA_VERSION=20220301.084752
+#~ LCWA_VERSION=20240206.131624
 
 # User account and group under which the service will run..
 #~ LCWA_USER="$INST_USER"
@@ -128,7 +132,8 @@ env_file_exists(){
 
 
 function env_vars_name(){
-	echo "LCWA_INSTANCE" \
+	echo "LCWA_ENV_VERSION" \
+"LCWA_INSTANCE" \
 "LCWA_SERVICE" \
 "LCWA_PRODUCT" \
 "LCWA_DESC" \
@@ -195,12 +200,13 @@ function env_vars_defaults_get(){
     [ $VERBOSE -gt 0 ] && error_echo "Getting Defaults.."
 
 # Identifiers
+[ -z "$LCWA_ENV_VERSION" ] 			&&  LCWA_ENV_VERSION=20240206.131624
 [ -z "$LCWA_INSTANCE" ] 			&&  LCWA_INSTANCE="$INST_NAME"
 [ -z "$LCWA_SERVICE" ] 				&&  LCWA_SERVICE="$INST_NAME"
 [ -z "$LCWA_PRODUCT" ] 				&&  LCWA_PRODUCT="$INST_PROD"
 [ -z "$LCWA_DESC" ] 				&&  LCWA_DESC="$INST_DESC"
 [ -z "$LCWA_PRODUCTID" ] 			&&  LCWA_PRODUCTID="f1a4af09-977c-458a-b3f7-f530fb9029c1"				
-[ -z "$LCWA_VERSION" ] 				&&  LCWA_VERSION=20220301.084752
+[ -z "$LCWA_VERSION" ] 				&&  LCWA_VERSION=20240206.131624
                                                             
 # User account and group under which the service will run.. 
 [ -z "$LCWA_USER" ] 				&&  LCWA_USER="$LCWA_INSTANCE"

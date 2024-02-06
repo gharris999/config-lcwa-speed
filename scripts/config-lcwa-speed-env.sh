@@ -1,5 +1,12 @@
 #!/bin/bash
 
+######################################################################################################
+# Bash script creating the environment file required for the service and timer units
+######################################################################################################
+
+SCRIPT_VERSION=20240206.131736
+
+
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
 SCRIPT_NAME="$(basename $0)"
