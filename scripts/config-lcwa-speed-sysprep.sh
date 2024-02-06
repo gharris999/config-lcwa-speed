@@ -6,7 +6,7 @@
 # Latest mod: Checks to make sure systemd-timesyncd.service and are enabled and started.  This ensures
 #   that the system will have a time-sync.target that the speedtest service waits for before starting.
 ######################################################################################################
-SCRIPT_VERSION=20240206.101855
+SCRIPT_VERSION=20240206.104804
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -167,17 +167,20 @@ basic_utils_install(){
 	if [ $USE_APT -gt 0 ]; then
 		LPKG_LIST=" \
 				bc \
-				jq \
-				dnsutils \
-				iperf3 \
-				wget \
-				lynx \
-				whois \
-				ufw \
+				file \
+				git \
+				git-extras \
 				gzip \
-				zip \
+				jq \
+				lynx \
+				multitail \
+				ntpdate \
+				sshpass \
+				ufw \
 				unzip \
-				sshpass"
+				wget \
+				zip"
+
 				
 		is_raspberry_pi && LPKG_LIST="${LPKG_LIST} libatlas-base-dev"
 		
@@ -188,15 +191,19 @@ basic_utils_install(){
 	else
 		LPKG_LIST=" \
 				bc \
-				jq \
-				bind-utils \
-				iperf3 \
-				wget \
-				whois \
+				file \
+				git \
+				git-extras \
 				gzip \
-				zip \
+				jq \
+				lynx \
+				multitail \
+				ntpdate \
+				sshpass \
 				unzip \
-				sshpass"
+				wget \
+				zip"
+				
 		LPKG_LIST="$(echo $LPKG_LIST | xargs)"				
 		[ $TEST -lt 1 ] && dnf_update
 		[ $TEST -lt 1 ] && dnf_install "$LPKG_LIST"

@@ -6,7 +6,7 @@
 #
 #	Latest mod: Kludge fix for unreliable rpi pip3 numpy package
 ######################################################################################################
-SCRIPT_VERSION=20240206.072353
+SCRIPT_VERSION=20240206.104431
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -543,36 +543,21 @@ pkg_deps_install(){
 			[ $FORCE -gt 1 ] && apt_update
 		
 			#~ [ $IS_FOCAL -lt 1 ] && LIBFFI='libffi6' || LIBFFI='libffi7'
-			LIBFFI="$(apt-cache search 'libffi[0-9]{1,3}' | awk '{ print $1 }')"
+			LIBFFI="$(apt-cache search '^libffi[0-9]{1,3}' | awk '{ print $1 }')"
 			
 			LPKG_LIST=" \
-				bc \
-				jq \
-				dnsutils \
-				iperf3 \
-				multitail \
-				ntpdate \
-				wget \
-				whois \
-				ufw \
-				file \
-				git \
-				git-extras \
-				gzip \
-				zip \
-				unzip \
-				sshpass \
-				gnupg1 \
-				espeak \
-				pulseaudio \
+				at-spi2-core \
 				build-essential \
-				git \
-				git-extras \
-				scons \
-				swig \
+				dnsutils \
+				espeak \
+				gnupg1 \
+				iperf3 \
 				libffi-dev \
 				${LIBFFI} \
-				at-spi2-core"
+				pulseaudio \
+				scons \
+				swig \
+				whois"
 
 			LPKG_LIST="$(echo $LPKG_LIST | xargs)"
 			
@@ -596,29 +581,20 @@ pkg_deps_install(){
 			fi
 			
 			LPKG_LIST=" \
+				at-spi2-core \
 				bc \
-				jq \
 				bind-utils \
-				iperf3 \
-				wget \
-				whois \
-				ntpdate \
-				gzip \
-				zip \
-				unzip \
-				sshpass \
-				gnupg1 \
+				jq \
 				espeak \
-				sshpass \
-				pulseaudio \
-				git \
-				git-extras \
-				python3-scons \
-				swig \
+				gnupg1 \
+				iperf3 \
 				libffi-devel \
 				libffi \
-				at-spi2-core"
-				
+				pulseaudio \
+				python3-scons \
+				swig \
+				whois"
+
 			LPKG_LIST="$(echo $LPKG_LIST | xargs)"
 			
 			LPKG_LIST="$(pkg_check "$LPKG_LIST")"
