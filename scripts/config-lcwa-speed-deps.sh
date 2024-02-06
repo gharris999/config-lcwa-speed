@@ -6,7 +6,7 @@
 #
 #	Latest mod: Kludge fix for unreliable rpi pip3 numpy package
 ######################################################################################################
-SCRIPT_VERSION=20240205.064301
+SCRIPT_VERSION=20240206.072353
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -551,6 +551,7 @@ pkg_deps_install(){
 				dnsutils \
 				iperf3 \
 				multitail \
+				ntpdate \
 				wget \
 				whois \
 				ufw \
@@ -601,6 +602,7 @@ pkg_deps_install(){
 				iperf3 \
 				wget \
 				whois \
+				ntpdate \
 				gzip \
 				zip \
 				unzip \

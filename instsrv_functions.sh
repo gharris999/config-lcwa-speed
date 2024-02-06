@@ -8,7 +8,7 @@
 #   dependent services properly wait until network is up before starting.
 #   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
 ######################################################################################################
-INCSCRIPT_VERSION=20240205.001316
+INCSCRIPT_VERSION=20240206.101827
 
 SCRIPT_NAME=$(basename -- "$0")
 
@@ -5218,7 +5218,7 @@ systemd_unit_file_is_enabled(){
 	# If no wildcards and if no extension on the unit name, assume service
 	[ $(echo "$LUNIT" | grep -c '*') -lt 1 ] && [ $(echo "$LUNIT" | grep -c -e '.*\..*') -lt 1 ] && LUNIT="${LUNIT}.service"
 	
-	systemctl is-enabled $LUNIT >/dev/null 2>&1
+	systemctl -q is-enabled $LUNIT >/dev/null 2>&1
 	LRET=$?
 	
 	if [ $DEBUG -gt 0 ] || [ $VERBOSE -gt 0 ]; then
@@ -5226,6 +5226,33 @@ systemd_unit_file_is_enabled(){
 			debug_echo "Unit file ${LUNIT} is DISABLED.."
 		else
 			debug_echo "Unit file ${LUNIT} is ENABLED.."
+		fi
+	fi
+	
+	return $LRET
+}
+
+######################################################################################################
+# systemd_unit_file_is_running() Return 0 if unit file is running, 1 if not running.
+######################################################################################################
+systemd_unit_file_is_running(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LUNIT="$1"
+	local LRET=
+
+	[ -z "$LUNIT" ] && LUNIT="$INST_NAME"
+
+	# If no wildcards and if no extension on the unit name, assume service
+	[ $(echo "$LUNIT" | grep -c '*') -lt 1 ] && [ $(echo "$LUNIT" | grep -c -e '.*\..*') -lt 1 ] && LUNIT="${LUNIT}.service"
+
+	systemctl -q is-active $LUNIT >/dev/null 2>&1
+	LRET=$?
+	
+	if [ $DEBUG -gt 0 ] || [ $VERBOSE -gt 0 ]; then
+		if [ $LRET -gt 0 ]; then
+			debug_echo "Unit file ${LUNIT} is RUNNING.."
+		else
+			debug_echo "Unit file ${LUNIT} is NOT RUNNING.."
 		fi
 	fi
 	

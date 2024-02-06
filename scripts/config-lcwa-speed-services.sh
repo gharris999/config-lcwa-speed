@@ -3,11 +3,12 @@
 ######################################################################################################
 # Bash script for installing systemd service and timer unit files to run and maintain the
 #   LCWA PPPoE Speedtest Logger python code.
-# Last mod: systemd_unit_file_create -- added Wants=network-online.target to make sure network
-#   dependent services properly wait until network is up before starting.
-#   Depends on systemd-networkd-wait-online.service or NetworkManager-wait-online.service being enabled too.
+# Last mod: systemd_unit_file_create -- added After=time-sync.target and Wants=time-sync.target
+#   to the speedtest service unit file so that the service won't be started before the system
+#   ntp time-syncs.  This is necessary as RPIs have no hardware clock.  Practical results is to
+#   delay the start of the speedtest service by > 30 seconds from system boot.
 ######################################################################################################
-SCRIPT_VERSION=20240202.100758
+SCRIPT_VERSION=20240206.101852
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -18,7 +19,7 @@ SCRIPT_DESC="Installs systemd service and timer unit files for the lcwa-speed se
 # Include the generic service install functions
 ######################################################################################################
 
-REC_INCSCRIPT_VER=20201220
+REC_INCSCRIPT_VER=20240206
 INCLUDE_FILE="$(dirname $(readlink -f $0))/instsrv_functions.sh"
 [ ! -f "$INCLUDE_FILE" ] && INCLUDE_FILE='/usr/local/sbin/instsrv_functions.sh'
 
@@ -177,6 +178,10 @@ lcwa_speed_unit_file_create(){
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
 	local LUNIT_FILE="/lib/systemd/system/${LCWA_SERVICE}.service"
 	local LACTION=
+	local LTIMEDATECTL="$(which timedatectl 2>/dev/null)"
+	local LTIMESYNC_TARGET=
+
+	
 	
 	[ $TEST -gt 2 ] && LUNIT_FILE="./${LCWA_SERVICE}.service"
 	
@@ -189,8 +194,8 @@ lcwa_speed_unit_file_create(){
 
 	[Unit]
 	Description=$LCWA_DESC
-	After=network-online.target
-	Wants=network-online.target
+	After=network-online.target time-sync.target
+	Wants=network-online.target time-sync.target
 	
 	[Service]
 	#UMask=002
@@ -530,9 +535,6 @@ crontab_entry_remove(){
 }
 
 
-
-
-
 ##################################################################################
 ##################################################################################
 ##################################################################################
@@ -754,6 +756,9 @@ else
 	# Stop & disable our services & timers
 	units_stop
 	units_disable
+
+	# Enable the systemd time-sync.target
+	systemd_time_sync_target_enable
 
 	# Create & enable the lcwa-speed.service
 	lcwa_speed_unit_file_create

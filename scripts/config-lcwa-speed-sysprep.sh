@@ -3,10 +3,10 @@
 # Bash script for preparing a system for the lcwa-speed service.  Modifies hostname, system timezone,
 # and for Raspberry Pi systems, modifies locale, keyboard and wifi country settings.
 #
-# Latest mod: Add lynx https parser to basic utils to install. Used to get URLs for RPi versions of
-#             the ookla speedtest cli binary package
+# Latest mod: Checks to make sure systemd-timesyncd.service and are enabled and started.  This ensures
+#   that the system will have a time-sync.target that the speedtest service waits for before starting.
 ######################################################################################################
-SCRIPT_VERSION=20240202.184729
+SCRIPT_VERSION=20240206.101855
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -18,7 +18,7 @@ SCRIPT_DESC="Initial system prep: hostname checking, locale settings, TZ setting
 # Include the generic service install functions
 ######################################################################################################
 
-REC_INCSCRIPT_VER=20201220
+REC_INCSCRIPT_VER=20240206
 INCLUDE_FILE="$(dirname $(readlink -f $0))/instsrv_functions.sh"
 [ ! -f "$INCLUDE_FILE" ] && INCLUDE_FILE='/usr/local/sbin/instsrv_functions.sh'
 
@@ -313,6 +313,8 @@ systemd_set_tz_to_local(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local LTIMESYNC_CONF='/etc/systemd/timesyncd.conf'
 	local LNTP_SERVERS='NTP=0.north-america.pool.ntp.org 1.north-america.pool.ntp.org 2.north-america.pool.ntp.org 3.north-america.pool.ntp.org'
+	local LTIMESYNCD='systemd-timesyncd.service'
+	local LTIMESYNC_WAIT='systemd-time-wait-sync.service'
 
 
 	# Check the timezone we're set to..
@@ -336,8 +338,22 @@ systemd_set_tz_to_local(){
 		
 		# Make sure systemd-timesyncd.service is running
 		[ $TEST -lt 1 ] && "$LTIMEDATECTL" set-ntp True
+
+		if [ $("$LTIMEDATECTL" status | grep -c -E '^\s+NTP service: active') -lt 1 ]; then
+			[ $TEST -lt 1 ] && systemctl enable "$LTIMESYNCD"
+			[ $TEST -lt 1 ] && systemctl restart "$LTIMESYNCD"
+		fi
+		
 		[ $VERBOSE -gt 0 ] && "$LTIMEDATECTL" status
 		[ $VERBOSE -gt 0 ] && systemctl -l --no-pager status systemd-timesyncd.service
+
+		# Enable the time-sync.target so that our service only starts AFTER the system time has been synchronized.
+		#    -- This depends on our service unit file containing After=time-sync.target and Wants=time-sync.target
+		if ( ! systemd_unit_file_is_enabled "$LTIMESYNC_WAIT" ); then
+			[ $TEST -lt 1 ] && systemctl enable "$LTIMESYNC_WAIT"
+		fi
+		[ $TEST -lt 1 ] && systemctl restart "$LTIMESYNC_WAIT"
+		[ $VERBOSE -gt 0 ] && systemctl -l --no-pager status "$LTIMESYNCD"
 	fi
 	
 	debug_echo " ${FUNCNAME}(): done"
@@ -687,7 +703,6 @@ rpi_fixups(){
 	####################################################################
 	# Set the locale
 	local LMY_LOCALE='en_US.UTF-8'
-	DEBLANGUAGE="en_US.UTF-8"
 
 	if [ $DEBUG -gt 1 ]; then
 		error_echo ' '
@@ -696,12 +711,13 @@ rpi_fixups(){
 		error_echo ' '
 	fi
 
-	# Only change locale if not already correctly set
+    # Only change locale if not already correctly set
 	if [ $(grep -c "^${LMY_LOCALE} .*\$" /etc/locale.gen) -lt 1 ]; then
-		#~ rpi_setting_change do_change_locale "$LMY_LOCALE"
-		rpi_locale_set "$LMY_LOCALE"
+		update-locale --no-checks LANG
+		update-locale --no-checks "LANG=${LMY_LOCALE}"
+		dpkg-reconfigure -f noninteractive locales
 	fi
-	
+
 	if [ $DEBUG -gt 1 ]; then
 		error_echo ' '
 		error_echo "System locale after:"
