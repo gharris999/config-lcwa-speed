@@ -1,5 +1,15 @@
 ################################################################################################################
 # config-lcwa-speed script functions
+#
+# Latest Mods:
+#
+# Version stamping for the environment file and for the config.json file.  Will be used to determine
+#   if those files need to be recreated by the update service.
+#
+# config-lcwa-speed-sysprep.sh updated to enable systemd-timesyncd.service and systemd-time-wait-sync.service
+#
+# config-lcwa-speed-services.sh updated to add Wants= & After=systemd-time-wait-sync.service so that RPi systems
+#    will have gotten an ntp time sync from systemd-timesyncd.service before our service starts.
 # 
 ################################################################################################################
 # CONFIG SCRIPTS

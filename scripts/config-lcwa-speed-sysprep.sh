@@ -6,7 +6,7 @@
 # Latest mod: Checks to make sure systemd-timesyncd.service and are enabled and started.  This ensures
 #   that the system will have a time-sync.target that the speedtest service waits for before starting.
 ######################################################################################################
-SCRIPT_VERSION=20240206.104804
+SCRIPT_VERSION=20240206.132553
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -720,6 +720,7 @@ rpi_fixups(){
 
     # Only change locale if not already correctly set
 	if [ $(grep -c "^${LMY_LOCALE} .*\$" /etc/locale.gen) -lt 1 ]; then
+		[ $QUIET -lt 1 ] && error_echo "Changing system locale to ${LMY_LOCALE}.."
 		update-locale --no-checks LANG
 		update-locale --no-checks "LANG=${LMY_LOCALE}"
 		dpkg-reconfigure -f noninteractive locales
@@ -890,7 +891,8 @@ is_raspberry_pi
 [ $? -lt 1 ] && rpi_fixups
 
 ####################################################################
-# Change system tz from UTC to local..
+# Change system tz from UTC to local and enable
+# systemd-timesyncd.service and systemd-time-wait-sync.service
 systemd_set_tz_to_local
 
 ####################################################################
