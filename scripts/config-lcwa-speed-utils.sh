@@ -4,7 +4,7 @@
 #
 #	Latest mod: Create view.sh & wipe.sh links in the log directory
 ######################################################################################################
-SCRIPT_VERSION=20240205.064409
+SCRIPT_VERSION=20240206.165121
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -180,7 +180,7 @@ function config_bash_aliases(){
 			$LCMD "$LALIASES" 'start'			"systemctl restart ${LCWA_SERVICE}"
 			$LCMD "$LALIASES" 'stop' 			"systemctl stop ${LCWA_SERVICE}; systemctl stop ${LCWA_SERVICE}-debug"
 			$LCMD "$LALIASES" 'status'			"systemctl status ${LCWA_SERVICE}"
-			$LCMD "$LALIASES" 'fetch'			'scp -p daadmin@gharris-mini:/home/daadmin/DevProj/lcwa-speed/src_patches/wgh_mods02/*.py .'
+			$LCMD "$LALIASES" 'fetch'			"scp -p daadmin@gharris-mini:/home/daadmin/DevProj/lcwa-speed/$(basename "$LCWA_REPO_BRANCH")/*.py ."
 		fi
 
 		if [ "$LUSER" = 'root' ]; then

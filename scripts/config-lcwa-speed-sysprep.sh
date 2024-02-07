@@ -6,7 +6,7 @@
 # Latest mod: Checks to make sure systemd-timesyncd.service and are enabled and started.  This ensures
 #   that the system will have a time-sync.target that the speedtest service waits for before starting.
 ######################################################################################################
-SCRIPT_VERSION=20240206.132553
+SCRIPT_VERSION=20240206.174949
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -328,6 +328,7 @@ systemd_set_tz_to_local(){
 	local LTIMEDATECTL="$(which timedatectl 2>/dev/null)"
 
 	if [ ! -z "$LTIMEDATECTL" ]; then
+		# Change the timezone to local..
 		local LSYS_TZ="$("$LTIMEDATECTL" status | grep 'zone:' | sed -n -e 's/^.*: \(.*\) (.*$/\1/p')"
 		local LMY_TZ="$(timezone_get)"
 		if [ "$LMY_TZ" != "$LSYS_TZ" ]; then
@@ -342,6 +343,8 @@ systemd_set_tz_to_local(){
 			[ $TEST -lt 1 ] && sed -i -e "s/^#*NTP=.*/${LNTP_SERVERS}/" "$LTIMESYNC_CONF"
 			[ $TEST -lt 1 ] && sed -i -e 's/^#*FallbackNTP=/FallbackNTP=/' "$LTIMESYNC_CONF"
 		fi
+		# Increase the time between systemd-timesyncd sync & sets to up to 2 hours
+		sed -i -e 's/^#*PollIntervalMaxSec=*/PollIntervalMaxSec=7200/' "$LTIMESYNC_CONF"
 		
 		# Make sure systemd-timesyncd.service is running
 		[ $TEST -lt 1 ] && "$LTIMEDATECTL" set-ntp True

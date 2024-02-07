@@ -4,12 +4,12 @@
 #
 # Latest mod: Improvements to service name identification, git update checking, etc.
 ######################################################################################################
-SCRIPT_VERSION=20240202.112632
+SCRIPT_VERSION=20240206.141422
 
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240202.112632
+SCRIPT_VERSION=20240206.141422
 
 INST_NAME='lcwa-speed'
 LCWA_ENVFILE="$INST_NAME"
@@ -1073,5 +1073,4 @@ fi
 log_msg "Update check for ${INST_NAME} finished."
 
 exit 0
-
 
