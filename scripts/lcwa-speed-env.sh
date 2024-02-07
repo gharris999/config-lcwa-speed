@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCRIPT_VERSION=20240206.131624
+SCRIPT_VERSION=20240207.001143
 
 
 env_vars_zero(){
@@ -54,13 +54,13 @@ env_file_exists(){
 ######################################################################################################
 
 # Identifiers
-#~ LCWA_ENV_VERSION=20240206.131624
+#~ LCWA_ENV_VERSION=20240207.001143
 #~ LCWA_INSTANCE="$INST_NAME"												# Top-level identifier, defaults to lcwa-speed
 #~ LCWA_SERVICE="$INST_NAME"											# Potentially a sub-identifier of LCWA_INSTANCE, e.g. lcwa-speed-beta or lcwa-speed-test
 #~ LCWA_PRODUCT="$INST_PROD"
 #~ LCWA_DESC="$INST_DESC"
 #~ LCWA_PRODUCTID="f1a4af09-977c-458a-b3f7-f530fb9029c1"				# Random GUID..
-#~ LCWA_VERSION=20240206.131624
+#~ LCWA_VERSION=20240207.001143
 
 # User account and group under which the service will run..
 #~ LCWA_USER="$INST_USER"
@@ -200,13 +200,13 @@ function env_vars_defaults_get(){
     [ $VERBOSE -gt 0 ] && error_echo "Getting Defaults.."
 
 # Identifiers
-[ -z "$LCWA_ENV_VERSION" ] 			&&  LCWA_ENV_VERSION=20240206.131624
+[ -z "$LCWA_ENV_VERSION" ] 			&&  LCWA_ENV_VERSION=20240207.001143
 [ -z "$LCWA_INSTANCE" ] 			&&  LCWA_INSTANCE="$INST_NAME"
 [ -z "$LCWA_SERVICE" ] 				&&  LCWA_SERVICE="$INST_NAME"
 [ -z "$LCWA_PRODUCT" ] 				&&  LCWA_PRODUCT="$INST_PROD"
 [ -z "$LCWA_DESC" ] 				&&  LCWA_DESC="$INST_DESC"
 [ -z "$LCWA_PRODUCTID" ] 			&&  LCWA_PRODUCTID="f1a4af09-977c-458a-b3f7-f530fb9029c1"				
-[ -z "$LCWA_VERSION" ] 				&&  LCWA_VERSION=20240206.131624
+[ -z "$LCWA_VERSION" ] 				&&  LCWA_VERSION=20240207.001143
                                                             
 # User account and group under which the service will run.. 
 [ -z "$LCWA_USER" ] 				&&  LCWA_USER="$LCWA_INSTANCE"
@@ -267,8 +267,8 @@ function env_vars_defaults_get(){
                                                             
 # Other control variables for the update script
 [ -z "$LCWA_PRESERVE_ENV" ]			&&	LCWA_PRESERVE_ENV=0       
-[ -z "$LCWA_CLEARLOG" ] 			&&  LCWA_CLEARLOG=1
-[ -z "$LCWA_NOUPDATES" ] 			&&  LCWA_NOUPDATES=1
+[ -z "$LCWA_CLEARLOG" ] 			&&  LCWA_CLEARLOG=0
+[ -z "$LCWA_NOUPDATES" ] 			&&  LCWA_NOUPDATES=0
                                                             
 # Service unit file, control variables: pid, priority, memory, etc..
 [ -z "$LCWA_UNIT" ] 				&&  LCWA_UNIT="/lib/systemd/system/${LCWA_SERVICE}.service"
