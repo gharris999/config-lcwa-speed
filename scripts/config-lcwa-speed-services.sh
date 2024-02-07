@@ -8,7 +8,7 @@
 #   ntp time-syncs.  This is necessary as RPIs have no hardware clock.  Practical results is to
 #   delay the start of the speedtest service by > 30 seconds from system boot.
 ######################################################################################################
-SCRIPT_VERSION=20240206.130621
+SCRIPT_VERSION=20240207.003257
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -191,7 +191,7 @@ lcwa_speed_unit_file_create(){
 	[ $TEST -lt 1 ] && cat >"$LUNIT_FILE" <<-SYSTEMD_SCR1;
 	## ${LUNIT_FILE} -- $(date)
 	## systemd service unit file
-	## UNITVERSION=20240206.130621
+	## UNITVERSION=20240207.003257
 
 	[Unit]
 	Description=$LCWA_DESC
@@ -233,7 +233,7 @@ lcwa_speed_unit_file_create(){
 	[ $TEST -lt 1 ] && cat >"$LUNIT_FILE" <<-SYSTEMD_SCR2;
 	## ${LUNIT_FILE} -- $(date)
 	## systemd service unit file
-	## UNITVERSION=20240206.130621
+	## UNITVERSION=20240207.003257
 
 	[Unit]
 	Description=$LCWA_DESC debug mode.
@@ -294,7 +294,7 @@ lcwa_speed_update_timer_create(){
 	[ $TEST -lt 1 ] && cat >"$LUPDATE_SERVICE_FILE" <<-EOF_TMRDEF1;
 	## ${LUPDATE_SERVICE_FILE} -- $(date)
 	## systemd service unit file
-	## UNITVERSION=20240206.130621
+	## UNITVERSION=20240207.003257
 
 	[Unit]
 	Description=${LCWA_SERVICE} service nightly update.
@@ -329,7 +329,7 @@ lcwa_speed_update_timer_create(){
 	[ $TEST -lt 1 ] && cat >"$LUPDATE_SERVICE_FILE" <<-EOF_TMRDEF1;
 	## ${LUPDATE_SERVICE_FILE} -- $(date)
 	## systemd service unit file
-	## UNITVERSION=20240206.130621
+	## UNITVERSION=20240207.003257
 
 	[Unit]
 	Description=${LCWA_SERVICE} service nightly update.
@@ -364,7 +364,7 @@ lcwa_speed_update_timer_create(){
 	[ $TEST -lt 1 ] && cat >"$LUPDATE_TIMER_FILE" <<-EOF_TMRDEF2;
 	## ${LUPDATE_TIMER_FILE} -- $(date)
 	## systemd timer unit file
-	## UNITVERSION=20240206.130621
+	## UNITVERSION=20240207.003257
 
 	[Unit]
 	Description=Triggers the ${LUPDATE_SERVICE_NAME} at 00:05 daily, which runs the $(basename ${LCWA_UPDATE_SCRIPT}) script.
@@ -397,7 +397,32 @@ lcwa_speed_update_timer_create(){
 	
 }
 
+systemd_time_sync_target_enable(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LTIMESYNCD='systemd-timesyncd.service'
+	local LTIMESYNC_WAIT='systemd-time-wait-sync.service'
+	local LTIMEDATECTL="$(which timedatectl 2>/dev/null)"
 
+	# Make sure systemd-timesyncd.service is running
+	[ $TEST -lt 1 ] && "$LTIMEDATECTL" set-ntp True
+
+	if [ $("$LTIMEDATECTL" status | grep -c -E '^\s+NTP service: active') -lt 1 ]; then
+		[ $TEST -lt 1 ] && systemctl enable "$LTIMESYNCD"
+		[ $TEST -lt 1 ] && systemctl restart "$LTIMESYNCD"
+	fi
+	
+	[ $VERBOSE -gt 0 ] && "$LTIMEDATECTL" status
+	[ $VERBOSE -gt 0 ] && systemctl -l --no-pager status systemd-timesyncd.service
+
+	# Enable the time-sync.target so that our service only starts AFTER the system time has been synchronized.
+	#    -- This depends on our service unit file containing After=time-sync.target and Wants=time-sync.target
+	if ( ! systemd_unit_file_is_enabled "$LTIMESYNC_WAIT" ); then
+		[ $TEST -lt 1 ] && systemctl enable "$LTIMESYNC_WAIT"
+	fi
+	[ $TEST -lt 1 ] && systemctl restart "$LTIMESYNC_WAIT"
+	[ $VERBOSE -gt 0 ] && systemctl -l --no-pager status "$LTIMESYNCD"
+
+}
 
 
 # This lists just the unit files that should be enabled / started
