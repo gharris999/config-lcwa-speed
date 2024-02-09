@@ -4,12 +4,12 @@
 #
 # Latest mod: Improvements to service name identification, git update checking, etc.
 ######################################################################################################
-SCRIPT_VERSION=20240206.141422
+SCRIPT_VERSION=20240208.225117
 
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240206.141422
+SCRIPT_VERSION=20240208.225117
 
 INST_NAME='lcwa-speed'
 LCWA_ENVFILE="$INST_NAME"
@@ -225,61 +225,6 @@ env_file_read(){
 	fi
 }
 
-services_zip_update(){
-	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
-	# Get date of ourselves..
-	# Get date of file..
-	local LURL='http://www.hegardtfoundation.org/slimstuff/Services.zip'
-	#~ SCRIPT='/usr/local/sbin/lcwa-speed-update.sh'
-	local REMOT_FILEDATE=
-	local LOCAL_FILEDATE=
-	local REMOT_EPOCH=
-	local LOCAL_EPOCH=
-	local TEMPFILE=
-
-	log_msg "Checking ${SCRIPT} to see if update of the update is needed.."
-	
-	# Remote file time here: 5/1/2020 14:01
-	REMOT_FILEDATE="$(curl -s -v -I -X HEAD http://www.hegardtfoundation.org/slimstuff/Services.zip 2>&1 | grep -m1 -E "^Last-Modified:")"
-	# Sanitize the filedate, removing tabs, CR, LF
-	REMOT_FILEDATE="$(echo "${REMOT_FILEDATE//[$'\t\r\n']}")"
-	REMOT_FILEDATE="$(echo "$REMOT_FILEDATE" | sed -n -e 's/^Last-Modified: \(.*$\)/\1/p')"
-	error_echo "REMOT_FILEDATE: ${REMOT_FILEDATE}"
-	REMOT_EPOCH="$(date "-d${REMOT_FILEDATE}" +%s)"
-	
-	LOCAL_FILEDATE="$(stat -c %y ${SCRIPT})"
-	LOCAL_EPOCH="$(date "-d${LOCAL_FILEDATE}" +%s)"
-	
-	[ $DEBUG -gt 0 ] && log_msg "Comparing dates"
-	[ $DEBUG -gt 0 ] && log_msg " Local: [${LOCAL_EPOCH}] $(date_epoch_to_iso8601  ${LOCAL_EPOCH})"
-	[ $DEBUG -gt 0 ] && log_msg "Remote: [${REMOT_EPOCH}] $(date_epoch_to_iso8601  ${REMOT_EPOCH})"
-
-	[ $DEBUG -gt 0 ] && [ $LOCAL_EPOCH -lt $REMOT_EPOCH ] && log_msg "Local ${SCRIPT} is older than Remote ${LURL} by $(displaytime $(echo "${REMOT_EPOCH} - ${LOCAL_EPOCH}" | bc))." || log_msg "Local ${SCRIPT} is newer than Remote ${LURL} by $(displaytime $(echo "${LOCAL_EPOCH} - ${REMOT_EPOCH}" | bc))." 
-
-	# Update ourselves if we're older than Services.zip
-	if [ $LOCAL_EPOCH -lt $REMOT_EPOCH ]; then
-		log_msg "Updating ${SCRIPT} with new verson.."
-		TEMPFILE="$(mktemp -u)"
-		# Download the Services.zip file, keeping the file modification date & time
-		[ $TEST -lt 1 ] && wget --quiet -O "$TEMPFILE" -S "$LURL" >/dev/null 2>&1
-		if [ -f "$TEMPFILE" ]; then
-			cd /tmp
-			unzip -u -o -qq "$TEMPFILE"
-			cd Services
-			./install.sh
-			cd "config-${INST_NAME}"
-			"./config-${INST_NAME}.sh" --update
-			cd /tmp
-			rm -Rf ./Services
-			rm "$TEMPFILE"
-			REBOOT=1
-		fi
-	else
-		log_msg "${SCRIPT} is up to date."
-	fi
-		
-}
-
 sbin_zip_update(){
 	[ $DEBUG -gt 0 ] && error_echo "${FUNCNAME}( $@ )"
 	local LURL='http://www.hegardtfoundation.org/slimstuff/sbin.zip'
@@ -453,6 +398,13 @@ git_in_repo(){
 	fi
 }
 
+git_repo_make_safe(){
+	debug_echo "${FUNCNAME}( $@ )"
+	local LLOCAL_REPO="$1"
+	[ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LLOCAL_REPO"
+	git config --global --add safe.directory "$LLOCAL_REPO"
+}
+
 #---------------------------------------------------------------------------
 # Discard any local changes from the repo, sending the git output to stderr
 git_clean(){
@@ -492,6 +444,7 @@ git_update(){
 		log_msg "Updating ${LLOCAL_REPO}"
 		git pull 1>&2
 		LRET=${PIPESTATUS[0]}
+		[ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LLOCAL_REPO"
 	else
 		log_msg "Test Updating ${LLOCAL_REPO}"
 		git pull --dry-run 1>&2
@@ -521,6 +474,7 @@ git_update_do() {
 		git_clean "$LLOCAL_REPO" || LRET=1
 		[ $LRET -lt 1 ] && git_update "$LLOCAL_REPO"
 		LRET=$?
+		
 	fi
 
 	if [ $LRET -lt 1 ]; then
@@ -1001,6 +955,8 @@ else
 
 	# Check and update the speedtest python code repo..
 	if [ $LCWA_REPO_UPDATE -gt 0 ]; then
+		[ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LCWA_REPO_LOCAL"
+		git_repo_make_safe "$LCWA_REPO_LOCAL"
 		git_check_up_to_date "$LCWA_REPO_LOCAL"
 		[ $? -eq 1 ] && git_update_do "$LCWA_REPO_LOCAL"
 	else
@@ -1011,6 +967,7 @@ else
 	if [ $LCWA_SUPREPO_UPDATE -gt 0 ]; then
 		# Check & update the suplimental repo (contains this script)
 		BEFORE_VER=$(script_version_get "${LCWA_SUPREPO_LOCAL}/config-${INST_NAME}.sh")
+		git_repo_make_safe "$LCWA_SUPREPO_LOCAL"
 		git_check_up_to_date "$LCWA_SUPREPO_LOCAL"
 		[ $? -eq 1 ] && git_update_do "$LCWA_SUPREPO_LOCAL"
 
@@ -1021,11 +978,6 @@ else
 		log_msg "Repo updates to ${LCWA_SUPREPO_LOCAL} blocked in ${LCWA_ENVFILE}."
 	fi
 	
-	# See if we need to update this update script..
-	if [ $SERVICES_UPDATE -gt 0 ]; then
-		services_zip_update
-	fi
-
 	if [ $SBIN_UPDATE -gt 0 ]; then
 		sbin_zip_update
 	fi
@@ -1036,24 +988,6 @@ else
 		[ $TEST -lt 1 ] && apt-get -y upgrade
 	fi
 	
-	# Patch the repo with our local patch files..
-	if [ $LCWA_REPO_PATCH -gt 0 ] && [ $NO_PATCH -lt 1 ]; then
-		PATCHSCRIPT="${LCWA_REPO_LOCAL}_patches/src/apply.sh"
-		log_msg "Checking for ${PATCHSCRIPT} patch script."
-
-		if [ -f "$PATCHSCRIPT" ]; then
-
-			log_msg "Applying patches to ${LCWA_REPO_LOCAL} from ${PATCHSCRIPT} patch script."
-			
-			[ $TEST -lt 1 ] && "$PATCHSCRIPT" | tee -a "$LCWA_VCLOG"
-			
-		else
-			log_msg "${PATCHSCRIPT} patch script does not exist."
-		fi
-	else
-		[ $VERBOSE -gt 0 ] && log_msg "Patch updates for ${LCWA_REPO_LOCAL} are disabled."
-	fi
-
 	# Update the ClusterControl block from Andi's repo's json config file..
 	if [ $CLUSTER_UPDATE -gt 0 ]; then
 		log_msg "Merging ClusterControl data from ${LCWA_REPO_LOCALCONF}."

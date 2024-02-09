@@ -8,7 +8,7 @@
 #
 # Latest mod: added git_repo_make_safe function to allow updating with dubious ownership..
 ######################################################################################################
-SCRIPT_VERSION=20240128.145522
+SCRIPT_VERSION=20240208.120022
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -266,7 +266,7 @@ git_repo_update(){
 
 git_repo_make_safe(){
 	debug_echo "${FUNCNAME}( $@ )"
-	local LLOCAL_REPO="$3"
+	local LLOCAL_REPO="$1"
 	git config --global --add safe.directory "$LLOCAL_REPO"
 }
 
@@ -298,6 +298,7 @@ git_repo_create(){
 		exit 1
 	else
 		# local repo exists...update it..
+		git_repo_make_safe "$LLOCAL_REPO"		
 		git_repo_clean "$LREMOTE_REPO" "$LLOCAL_REPO"
 		git_repo_update "$LREMOTE_REPO" "$LLOCAL_REPO"
 	fi

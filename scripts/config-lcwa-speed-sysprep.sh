@@ -6,7 +6,7 @@
 # Latest mod: Checks to make sure systemd-timesyncd.service and are enabled and started.  This ensures
 #   that the system will have a time-sync.target that the speedtest service waits for before starting.
 ######################################################################################################
-SCRIPT_VERSION=20240206.174949
+SCRIPT_VERSION=20240207.214316
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -167,7 +167,10 @@ basic_utils_install(){
 	if [ $USE_APT -gt 0 ]; then
 		LPKG_LIST=" \
 				bc \
+				curl \
+				dhcping \
 				file \
+				fping \
 				git \
 				git-extras \
 				gzip \
@@ -179,6 +182,7 @@ basic_utils_install(){
 				ufw \
 				unzip \
 				wget \
+				yamllint \
 				zip"
 
 				
@@ -191,7 +195,10 @@ basic_utils_install(){
 	else
 		LPKG_LIST=" \
 				bc \
+				curl \
+				dhcping\
 				file \
+				fping\
 				git \
 				git-extras \
 				gzip \
@@ -202,6 +209,7 @@ basic_utils_install(){
 				sshpass \
 				unzip \
 				wget \
+				yamllint \
 				zip"
 				
 		LPKG_LIST="$(echo $LPKG_LIST | xargs)"				

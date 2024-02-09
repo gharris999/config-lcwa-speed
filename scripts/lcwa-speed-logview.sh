@@ -5,7 +5,7 @@
 #
 # Latest mod: 
 ######################################################################################################
-SCRIPT_VERSION=20240121.094408
+SCRIPT_VERSION=20240208.115100
 
 # Script to view the stdout & stderr lcwa-speed service logs and the CSV data file.
 SCRIPT="$(realpath -s "$0")"
@@ -170,4 +170,4 @@ if [ $VERBOSE -gt 0 ]; then
     pause "Hit any key to continue, or Ctrl-C to quit."
 fi
 
-multitail -i "$LCWA_LOGFILE" -i "$LCWA_ERRFILE" -i "$LCWA_CSVFILE"
+multitail -n 500 -M 500 --follow-all "$LCWA_LOGFILE" "$LCWA_ERRFILE" "$LCWA_CSVFILE"

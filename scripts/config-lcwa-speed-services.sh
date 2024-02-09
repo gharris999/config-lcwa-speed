@@ -8,7 +8,7 @@
 #   ntp time-syncs.  This is necessary as RPIs have no hardware clock.  Practical results is to
 #   delay the start of the speedtest service by > 30 seconds from system boot.
 ######################################################################################################
-SCRIPT_VERSION=20240207.003257
+SCRIPT_VERSION=20240208.112043
 
 SCRIPT="$(readlink -f "$0")"
 SCRIPT_DIR="$(dirname "$SCRIPT")"
@@ -191,7 +191,7 @@ lcwa_speed_unit_file_create(){
 	[ $TEST -lt 1 ] && cat >"$LUNIT_FILE" <<-SYSTEMD_SCR1;
 	## ${LUNIT_FILE} -- $(date)
 	## systemd service unit file
-	## UNITVERSION=20240207.003257
+	## UNITVER=${SCRIPT_VERSION}
 
 	[Unit]
 	Description=$LCWA_DESC
@@ -200,7 +200,7 @@ lcwa_speed_unit_file_create(){
 	
 	[Service]
 	#UMask=002
-	Nice=-19
+	Nice=${LCWA_NICE}
 	LimitRTPRIO=infinity
 	LimitMEMLOCK=infinity
 	EnvironmentFile=${LCWA_ENVFILE}
@@ -211,6 +211,15 @@ lcwa_speed_unit_file_create(){
 	ExecStart=${LCWA_DAEMON} \$LCWA_OPTIONS
 	RestartSec=5
 	Restart=on-failure
+
+	# filesystem access
+	ProtectSystem=full
+	ReadWritePaths=${LCWA_DATADIR} ${LCWA_LOGDIR}
+	PrivateTmp=true
+	ProtectControlGroups=true
+	ProtectKernelModules=true
+	ProtectKernelTunables=true
+
 	StandardOutput=append:${LCWA_LOGFILE}
 	StandardError=append:${LCWA_ERRFILE}
 
@@ -233,16 +242,16 @@ lcwa_speed_unit_file_create(){
 	[ $TEST -lt 1 ] && cat >"$LUNIT_FILE" <<-SYSTEMD_SCR2;
 	## ${LUNIT_FILE} -- $(date)
 	## systemd service unit file
-	## UNITVERSION=20240207.003257
+	## UNITVER=${SCRIPT_VERSION}
 
 	[Unit]
 	Description=$LCWA_DESC debug mode.
-	After=network-online.target
-	Wants=network-online.target	
+	After=network-online.target time-sync.target
+	Wants=network-online.target time-sync.target
 
 	[Service]
 	#UMask=002
-	Nice=-19
+	Nice=${LCWA_NICE}
 	LimitRTPRIO=infinity
 	LimitMEMLOCK=infinity
 	EnvironmentFile=${LCWA_ENVFILE}
@@ -253,6 +262,15 @@ lcwa_speed_unit_file_create(){
 	ExecStart=${LCWA_DAEMON} \$LCWA_DEBUG_OPTIONS
 	RestartSec=5
 	Restart=on-failure
+
+	# filesystem access
+	ProtectSystem=full
+	ReadWritePaths=${LCWA_DATADIR} ${LCWA_LOGDIR}
+	PrivateTmp=true
+	ProtectControlGroups=true
+	ProtectKernelModules=true
+	ProtectKernelTunables=true
+	
 	StandardOutput=append:${LCWA_LOGDIR}/${LCWA_SERVICE}-debug.log
 	StandardError=append:${LCWA_LOGDIR}/${LCWA_SERVICE}-debug-error.log
 
@@ -294,7 +312,7 @@ lcwa_speed_update_timer_create(){
 	[ $TEST -lt 1 ] && cat >"$LUPDATE_SERVICE_FILE" <<-EOF_TMRDEF1;
 	## ${LUPDATE_SERVICE_FILE} -- $(date)
 	## systemd service unit file
-	## UNITVERSION=20240207.003257
+	## UNITVER=${SCRIPT_VERSION}
 
 	[Unit]
 	Description=${LCWA_SERVICE} service nightly update.
@@ -304,41 +322,6 @@ lcwa_speed_update_timer_create(){
 	Type=oneshot
 	ExecStart=${LUPDATE_CMD} \$LCWA_UPDATE_OPTIONS
 	StandardError=append:${LCWA_LOGDIR}/${LCWA_SERVICE}-update.log
-
-	[Install]
-	WantedBy=multi-user.target	
-	EOF_TMRDEF1
-	
-	if [ ! -f "$LUPDATE_SERVICE_FILE" ] && [ $TEST -lt 1 ]; then
-		error_echo "${FUNCNAME}( $@ ): Error -- could not create ${LUPDATE_SERVICE_FILE} file."
-		return 1
-	else
-		[ $TEST -lt 1 ] && chown root:root "$LUPDATE_SERVICE_FILE"
-		[ $TEST -lt 1 ] && chmod 0644 "$LUPDATE_SERVICE_FILE"
-	fi
-	
-	[ $DEBUG -gt 2 ] && debug_cat "$LUPDATE_SERVICE_FILE"	
-
-	# Create the service file
-	LUPDATE_SERVICE_NAME="${LCWA_SERVICE}-update-debug.service"
-	LUPDATE_SERVICE_FILE="/lib/systemd/system/${LUPDATE_SERVICE_NAME}"
-	[ ! -f "$LUPDATE_SERVICE_FILE" ] && LACTION='Creating' || LACTION='Overwriting'
-	
-	[ $QUIET -lt 1 ] && error_echo "${LACTION} ${LUPDATE_SERVICE_FILE} service file.."
-	
-	[ $TEST -lt 1 ] && cat >"$LUPDATE_SERVICE_FILE" <<-EOF_TMRDEF1;
-	## ${LUPDATE_SERVICE_FILE} -- $(date)
-	## systemd service unit file
-	## UNITVERSION=20240207.003257
-
-	[Unit]
-	Description=${LCWA_SERVICE} service nightly update.
-	Wants=${LUPDATE_TIMER_NAME}
-
-	[Service]
-	Type=oneshot
-	ExecStart=${LUPDATE_CMD} \$LCWA_UPDATE_DEBUG_OPTIONS
-	StandardError=append:${LCWA_LOGDIR}/${LCWA_SERVICE}-update-debug.log
 
 	[Install]
 	WantedBy=multi-user.target	
@@ -364,7 +347,7 @@ lcwa_speed_update_timer_create(){
 	[ $TEST -lt 1 ] && cat >"$LUPDATE_TIMER_FILE" <<-EOF_TMRDEF2;
 	## ${LUPDATE_TIMER_FILE} -- $(date)
 	## systemd timer unit file
-	## UNITVERSION=20240207.003257
+	## UNITVER=${SCRIPT_VERSION}
 
 	[Unit]
 	Description=Triggers the ${LUPDATE_SERVICE_NAME} at 00:05 daily, which runs the $(basename ${LCWA_UPDATE_SCRIPT}) script.
@@ -392,6 +375,42 @@ lcwa_speed_update_timer_create(){
 
 	# Enable the timer
 	#~ systemd_unit_enable "$LUPDATE_TIMER_NAME"
+
+	# Create the debug service file
+	LUPDATE_SERVICE_NAME="${LCWA_SERVICE}-update-debug.service"
+	LUPDATE_SERVICE_FILE="/lib/systemd/system/${LUPDATE_SERVICE_NAME}"
+	[ ! -f "$LUPDATE_SERVICE_FILE" ] && LACTION='Creating' || LACTION='Overwriting'
+	
+	[ $QUIET -lt 1 ] && error_echo "${LACTION} ${LUPDATE_SERVICE_FILE} service file.."
+	
+	[ $TEST -lt 1 ] && cat >"$LUPDATE_SERVICE_FILE" <<-EOF_TMRDEF1;
+	## ${LUPDATE_SERVICE_FILE} -- $(date)
+	## systemd service unit file
+	## UNITVER=${SCRIPT_VERSION}
+
+	[Unit]
+	Description=${LCWA_SERVICE} service nightly update.
+	Wants=${LUPDATE_TIMER_NAME}
+
+	[Service]
+	Type=oneshot
+	ExecStart=${LUPDATE_CMD} \$LCWA_UPDATE_DEBUG_OPTIONS
+	StandardError=append:${LCWA_LOGDIR}/${LCWA_SERVICE}-update-debug.log
+
+	[Install]
+	WantedBy=multi-user.target	
+	EOF_TMRDEF1
+	
+	if [ ! -f "$LUPDATE_SERVICE_FILE" ] && [ $TEST -lt 1 ]; then
+		error_echo "${FUNCNAME}( $@ ): Error -- could not create ${LUPDATE_SERVICE_FILE} file."
+		return 1
+	else
+		[ $TEST -lt 1 ] && chown root:root "$LUPDATE_SERVICE_FILE"
+		[ $TEST -lt 1 ] && chmod 0644 "$LUPDATE_SERVICE_FILE"
+	fi
+	
+	[ $DEBUG -gt 2 ] && debug_cat "$LUPDATE_SERVICE_FILE"	
+
 	
 	[ $DEBUG -gt 3 ] && debug_pause "${LINENO} ${FUNCNAME}() done."
 	
