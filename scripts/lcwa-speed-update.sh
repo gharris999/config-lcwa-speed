@@ -4,12 +4,12 @@
 #
 # Latest mod: Improvements to service name identification, git update checking, etc.
 ######################################################################################################
-SCRIPT_VERSION=20240208.230538
+SCRIPT_VERSION=20240208.231956
 
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240208.230538
+SCRIPT_VERSION=20240208.231956
 
 INST_NAME='lcwa-speed'
 LCWA_ENVFILE="$INST_NAME"
@@ -402,7 +402,7 @@ git_repo_make_safe(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local LLOCAL_REPO="$1"
 	[ $QUIET -lt 1 ] && error_echo "Fixing ownership of ${LLOCAL_REPO}.."
-	[ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LLOCAL_REPO" 1>&2
+	[ $TEST -lt 1 ] && chown -R 'root:root' "$LLOCAL_REPO" 1>&2
 	[ $QUIET -lt 1 ] && error_echo "Marking ${LLOCAL_REPO} as globally save.."
 	git config --global --add safe.directory "$LLOCAL_REPO" 1>&2
 }
@@ -447,7 +447,7 @@ git_update(){
 		git pull 1>&2
 		LRET=${PIPESTATUS[0]}
 		[ $QUIET -lt 1 ] && error_echo "Fixing ownership of ${LLOCAL_REPO}.."
-		chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LLOCAL_REPO"
+		chown -R 'root:root' "$LLOCAL_REPO" 1>&2
 	else
 		log_msg "Test Updating ${LLOCAL_REPO}"
 		git pull --dry-run 1>&2
