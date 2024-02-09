@@ -4,12 +4,12 @@
 #
 # Latest mod: Improvements to service name identification, git update checking, etc.
 ######################################################################################################
-SCRIPT_VERSION=20240208.225117
+SCRIPT_VERSION=20240208.230538
 
 # lcwa-speed-update.sh -- script to update lcwa-speed git repo and restart service..
 # Version Control for this script
 
-SCRIPT_VERSION=20240208.225117
+SCRIPT_VERSION=20240208.230538
 
 INST_NAME='lcwa-speed'
 LCWA_ENVFILE="$INST_NAME"
@@ -401,8 +401,10 @@ git_in_repo(){
 git_repo_make_safe(){
 	debug_echo "${FUNCNAME}( $@ )"
 	local LLOCAL_REPO="$1"
-	[ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LLOCAL_REPO"
-	git config --global --add safe.directory "$LLOCAL_REPO"
+	[ $QUIET -lt 1 ] && error_echo "Fixing ownership of ${LLOCAL_REPO}.."
+	[ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LLOCAL_REPO" 1>&2
+	[ $QUIET -lt 1 ] && error_echo "Marking ${LLOCAL_REPO} as globally save.."
+	git config --global --add safe.directory "$LLOCAL_REPO" 1>&2
 }
 
 #---------------------------------------------------------------------------
@@ -444,7 +446,8 @@ git_update(){
 		log_msg "Updating ${LLOCAL_REPO}"
 		git pull 1>&2
 		LRET=${PIPESTATUS[0]}
-		[ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LLOCAL_REPO"
+		[ $QUIET -lt 1 ] && error_echo "Fixing ownership of ${LLOCAL_REPO}.."
+		chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LLOCAL_REPO"
 	else
 		log_msg "Test Updating ${LLOCAL_REPO}"
 		git pull --dry-run 1>&2
@@ -955,7 +958,6 @@ else
 
 	# Check and update the speedtest python code repo..
 	if [ $LCWA_REPO_UPDATE -gt 0 ]; then
-		[ $TEST -lt 1 ] && chown -R "${LCWA_USER}:${LCWA_GROUP}" "$LCWA_REPO_LOCAL"
 		git_repo_make_safe "$LCWA_REPO_LOCAL"
 		git_check_up_to_date "$LCWA_REPO_LOCAL"
 		[ $? -eq 1 ] && git_update_do "$LCWA_REPO_LOCAL"
